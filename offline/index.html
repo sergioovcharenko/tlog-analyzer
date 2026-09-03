@@ -1,0 +1,4278 @@
+<!-- v1.3.3 «3D Lazy FIX»: v1.1 speed branch + UI-only 2D/3D trajectory switch; calculation algorithms preserved -->
+<!DOCTYPE html>
+<!-- V23.6: додано ENGINE LOAD у Timeline з VFR_HUD.throttle -->
+<!--
+  TLOG ANALYZER V23
+
+  V23 включає:
+  - LOITER: фактичний LOCAL_POSITION_NED (зелений).
+  - ALT HOLD: DR за Roll/Pitch + Heading + dt (червоний пунктир).
+  - LAND: жовтий; RTL: коричневий.
+  - NED-origin = перший валідний initial pos NED у LOITER.
+  - Єдиний масштаб N/E: 1 метр North = 1 метр East на SVG.
+  - Фізичний сектор АС із backend V23 (FLIGHT_PATH_NED / POSITION_NED / fallback).
+  - Zoom карти та телеметричні точки з правою панеллю деталей.
+  - Клік по рядку Timeline відкриває стіки TX16S саме для цього часу.
+-->
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI — TLOG Analyzer v1.3.3 «3D Lazy FIX»</title>
+<style>
+:root{
+  --bg-main:#0a0d11;
+  --bg-card:#121820;
+  --bg-header:#0f141c;
+  --border-color:#1e293b;
+  --border-highlight:#334155;
+  --text-main:#f1f5f9;
+  --text-muted:#94a3b8;
+  --accent:#22c55e;
+  --accent-hover:#16a34a;
+  --accent-glow:rgba(34,197,94,.15);
+  --danger:#ef4444;
+  --warning:#f59e0b;
+  --success:#22c55e;
+  --video:#f59e0b;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg-main);
+  color:var(--text-main);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  line-height:1.5
+}
+.header{
+  background:var(--bg-header);
+  border-bottom:1px solid var(--border-color);
+  padding:20px 40px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center
+}
+.header h1{
+  margin:0;
+  font-size:22px;
+  letter-spacing:1px;
+  display:flex;
+  align-items:center;
+  gap:10px
+}
+.header p{margin:4px 0 0;color:var(--text-muted);font-size:13px}
+.btn-reset{
+  display:none;
+  background:transparent;
+  border:1px solid var(--accent);
+  color:var(--accent);
+  padding:10px 18px;
+  border-radius:6px;
+  font-weight:600;
+  font-size:13px;
+  cursor:pointer;
+  transition:.2s;
+  text-transform:uppercase
+}
+.btn-reset:hover{
+  background:var(--accent);
+  color:#000;
+  box-shadow:0 0 15px var(--accent-glow)
+}
+.container{max-width:1800px;margin:auto;padding:40px 20px}
+.upload{
+  display:block;
+  border:1px dashed var(--border-highlight);
+  border-radius:12px;
+  padding:70px 20px;
+  text-align:center;
+  cursor:pointer;
+  background:var(--bg-card);
+  transition:.25s
+}
+.upload:hover{
+  border-color:var(--accent);
+  box-shadow:0 0 20px var(--accent-glow)
+}
+.upload-icon{font-size:50px;margin-bottom:15px}
+.upload-title{font-size:20px;font-weight:700}
+.upload-subtitle{margin-top:6px;color:var(--text-muted);font-size:14px}
+#fileInput{display:none}
+.file-box{
+  display:none;
+  margin-top:20px;
+  padding:20px;
+  border:1px solid var(--border-color);
+  border-radius:8px;
+  background:var(--bg-card)
+}
+.file-name{font-weight:600;font-size:15px}
+.file-size{color:var(--text-muted);font-size:13px;margin-top:4px}
+.analyze{
+  width:100%;
+  margin-top:20px;
+  padding:16px;
+  border:none;
+  border-radius:8px;
+  background:#1e293b;
+  color:#64748b;
+  font-size:15px;
+  font-weight:700;
+  cursor:not-allowed;
+  transition:.2s
+}
+.analyze.active{background:var(--accent);color:#05140a;cursor:pointer}
+.analyze.active:hover{background:var(--accent-hover);box-shadow:0 0 15px var(--accent-glow)}
+.progress-container{display:none;margin-top:30px}
+.progress-header{
+  display:flex;
+  justify-content:space-between;
+  color:var(--text-muted);
+  font-size:13px;
+  margin-bottom:8px
+}
+.progress-bar{height:6px;background:#1e293b;border-radius:3px;overflow:hidden}
+.progress-fill{width:0;height:100%;background:var(--accent);transition:width .3s}
+.error{
+  display:none;
+  margin-top:20px;
+  padding:16px;
+  color:var(--danger);
+  border:1px solid var(--danger);
+  border-radius:8px;
+  background:rgba(239,68,68,.08);
+  font-size:14px
+}
+.results{display:none;margin-top:40px}
+.section-title{
+  margin-top:36px;
+  margin-bottom:16px;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--border-color);
+  color:var(--text-muted);
+  font-size:16px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.4px
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:14px;
+  margin-bottom:20px
+}
+.card{
+  background:var(--bg-card);
+  border:1px solid var(--border-color);
+  border-radius:8px;
+  padding:18px
+}
+.card-title{
+  color:var(--text-muted);
+  font-size:12px;
+  text-transform:uppercase;
+  margin-bottom:8px;
+  letter-spacing:.4px
+}
+.card-value{font-size:24px;font-weight:700}
+.card-desc{margin-top:8px;color:var(--text-muted);font-size:12px}
+.val-danger{color:var(--danger)!important}
+.val-warning{color:var(--warning)!important}
+.val-success{color:var(--success)!important}
+.rf-video{color:var(--video)}
+.ai-box{
+  background:var(--bg-card);
+  border:1px solid var(--border-color);
+  border-left:4px solid var(--accent);
+  border-radius:8px;
+  padding:22px;
+  margin-bottom:30px
+}
+.ai-box.critical{
+  border-left-color:var(--danger);
+  background:rgba(239,68,68,.03)
+}
+.ai-box.returned{border-left-color:var(--warning)}
+.ai-title{margin:0 0 12px;font-size:18px;font-weight:700}
+.ai-list{line-height:1.5;margin:0;padding-left:20px}
+.ai-list li{margin-bottom:4px}
+.ai-list li.ai-clickable{cursor:pointer;border-radius:5px;padding:3px 6px;margin-left:-6px;transition:.15s}
+.ai-list li.ai-clickable:hover{background:rgba(59,130,246,.10);color:#bfdbfe}
+.ai-jump{display:inline-block;width:100%;cursor:pointer}
+.timeline{
+  position:relative;
+  background:var(--bg-card);
+  border:1px solid var(--border-color);
+  border-radius:8px;
+  overflow-x:auto;
+  margin-bottom:30px
+}
+.tl-header,.tl-item{
+  display:grid;
+  grid-template-columns:
+    80px
+    90px
+    70px
+    76px
+    70px
+    100px
+    76px
+    70px
+    56px
+    76px
+    84px   /* ENGINE LOAD */
+    170px
+    minmax(225px,1.00fr) /* запис / повідомлення */
+    minmax(230px,1.00fr) /* аналіз */
+    310px                 /* TX16S */
+    minmax(130px,.60fr);  /* дія пілота */
+  gap:5px;
+  min-width:1940px
+}
+.tl-header{
+  padding:8px 10px;
+  color:var(--text-muted);
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  border-bottom:1px solid var(--border-color);
+  background:#0f141c;
+  position:sticky;
+  top:0;
+  z-index:100;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);
+  line-height:1.2
+}
+.tl-item{
+  padding:6px 10px;
+  align-items:center;
+  border-bottom:1px solid var(--border-color);
+  font-size:12px;
+  line-height:1.2
+}
+.tl-time{color:var(--accent);font-family:monospace;font-weight:700}
+.tl-mode{color:var(--accent);font-weight:600}
+.tl-badge{font-family:monospace;font-weight:600}
+.tl-system{color:var(--text-main);overflow-wrap:anywhere;word-break:normal;min-width:0}
+.tl-pilot{color:#60a5fa;font-weight:600;overflow-wrap:anywhere;word-break:normal;min-width:0}
+.tl-system,.tl-pilot,.tl-badge,.tl-time,.tl-mode{margin:0;padding:0;line-height:1.2}
+.video-row{background:rgba(245,158,11,.04)}
+.error-row{background:rgba(239,68,68,.035)}
+.communication-lost-row{background:rgba(239,68,68,.17)!important;box-shadow:inset 5px 0 0 #ef4444}
+.communication-lost-row .tl-analysis{color:#fca5a5!important;font-weight:800}
+.communication-restored-row{background:rgba(34,197,94,.14)!important;box-shadow:inset 5px 0 0 #22c55e}
+.communication-restored-row .tl-analysis{color:#86efac!important;font-weight:800}
+.vibration-critical-row{
+  background:rgba(239,68,68,.12)!important;
+  box-shadow:inset 4px 0 0 var(--danger);
+}
+.vibration-critical-row .tl-time,
+.vibration-critical-row .tl-mode{color:#f87171}
+.attitude-critical-row{
+  background:rgba(239,68,68,.18)!important;
+  box-shadow:inset 4px 0 0 #ef4444;
+}
+.attitude-critical-row .tl-time,
+.attitude-critical-row .tl-mode{color:#f87171!important;font-weight:800}
+.timeline-jump-highlight{
+  outline:2px solid #60a5fa;
+  outline-offset:-2px;
+  animation:timelineJumpPulse 1.6s ease-out;
+}
+@keyframes timelineJumpPulse{
+  0%{box-shadow:inset 4px 0 0 #60a5fa,0 0 0 6px rgba(96,165,250,.24)}
+  100%{box-shadow:inset 4px 0 0 #60a5fa,0 0 0 0 rgba(96,165,250,0)}
+}
+.antenna-sector-row{
+  background:rgba(239,68,68,.16)!important;
+  box-shadow:inset 4px 0 0 #ef4444;
+}
+.antenna-sector-row .tl-time,
+.antenna-sector-row .tl-mode,
+.antenna-sector-row .radio-loss-value{
+  color:#f87171!important;
+  font-weight:800;
+}
+.radio-loss-value::after{
+  content:'  ⚠';
+  color:#ef4444;
+}
+
+.radio-normal{color:#22c55e!important;font-weight:700}
+.radio-video-degraded{color:#eab308!important;font-weight:800}
+.radio-video-lost{color:#f97316!important;font-weight:800}
+.radio-very-weak{color:#ef4444!important;font-weight:800}
+.radio-link-lost{color:#ef4444!important;font-weight:900}
+.radio-degraded-row{background:rgba(234,179,8,.05)}
+.radio-video-lost-row{background:rgba(249,115,22,.08)}
+.radio-link-lost-row{background:rgba(239,68,68,.10)}
+.esc-cell{
+  display:grid;
+  grid-template-columns:minmax(38px,auto) repeat(3,max-content);
+  align-items:center;
+  gap:4px;
+  min-width:0;
+  white-space:nowrap
+}
+.esc-toggle,.vib-toggle,.att-toggle{
+  border:1px solid var(--border-highlight);
+  background:#0f141c;
+  color:#93c5fd;
+  border-radius:4px;
+  padding:2px 4px;
+  font-size:9px;
+  font-weight:700;
+  cursor:pointer;
+  line-height:1.3
+}
+.esc-toggle:hover,.vib-toggle:hover,.att-toggle:hover{border-color:#60a5fa}
+.esc-detail{
+  display:none;
+  min-width:1660px;
+  border-bottom:1px solid var(--border-color);
+  background:#0d131a;
+  padding:8px 16px 10px
+}
+.esc-detail.open{display:block}
+.esc-detail-inner{
+  margin-left:805px;
+  max-width:620px;
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  overflow:hidden
+}
+.esc-detail-header,.esc-detail-row{
+  display:grid;
+  grid-template-columns:70px 100px 110px 110px;
+  gap:10px;
+  align-items:center;
+  padding:6px 10px
+}
+.esc-detail-header{
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  background:rgba(0,0,0,.25)
+}
+.esc-detail-row{
+  font-family:monospace;
+  font-size:11px;
+  border-top:1px solid var(--border-color)
+}
+.esc-no-data{
+  color:var(--text-muted);
+  font-size:11px;
+  padding:8px 10px
+}
+
+.vib-detail{
+  display:none;
+  min-width:1660px;
+  border-bottom:1px solid var(--border-color);
+  background:#0d131a;
+  padding:8px 16px 10px
+}
+.vib-detail.open{display:block}
+.vib-detail-inner{
+  margin-left:805px;
+  max-width:520px;
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  overflow:hidden
+}
+.vib-detail-header,.vib-detail-row{
+  display:grid;
+  grid-template-columns:90px 110px 110px 110px;
+  gap:10px;
+  align-items:center;
+  padding:6px 10px
+}
+.vib-detail-header{
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  background:rgba(0,0,0,.25)
+}
+.vib-detail-row{
+  font-family:monospace;
+  font-size:11px;
+  border-top:1px solid var(--border-color)
+}
+.vib-critical-value{color:var(--danger);font-weight:800}
+.vib-normal-value{color:var(--success);font-weight:700}
+
+.att-detail{
+  display:none;
+  min-width:1660px;
+  border-bottom:1px solid var(--border-color);
+  background:#0d131a;
+  padding:8px 16px 10px
+}
+.att-detail.open{display:block}
+.att-detail-inner{
+  margin-left:805px;
+  max-width:560px;
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  overflow:hidden
+}
+.att-detail-header,.att-detail-row{
+  display:grid;
+  grid-template-columns:90px 110px 110px 110px;
+  gap:10px;
+  align-items:center;
+  padding:6px 10px
+}
+.att-detail-header{
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  background:rgba(0,0,0,.25)
+}
+.att-detail-row{
+  font-family:monospace;
+  font-size:11px;
+  border-top:1px solid var(--border-color)
+}
+.att-critical-value{color:var(--danger);font-weight:800}
+.att-normal-value{color:var(--success);font-weight:700}
+
+.rpm-critical-row{
+  background:rgba(239,68,68,.16)!important;
+  box-shadow:inset 4px 0 0 #ef4444
+}
+.rpm-critical-value{color:var(--danger);font-weight:900}
+.rpm-warning-value{color:var(--warning);font-weight:800}
+
+.timeline-scrollbar-fixed{
+  position:sticky;
+  bottom:0;
+  z-index:100;
+  height:18px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  background:var(--bg-main);
+  border-top:1px solid var(--border-color);
+  display:none;
+}
+.timeline-scrollbar-inner{
+  height:1px;
+}
+.timeline-scrollbar-fixed::-webkit-scrollbar{
+  height:14px;
+}
+.timeline-scrollbar-fixed::-webkit-scrollbar-track{
+  background:#0f141c;
+}
+.timeline-scrollbar-fixed::-webkit-scrollbar-thumb{
+  background:#64748b;
+  border-radius:8px;
+}
+.timeline-scrollbar-fixed::-webkit-scrollbar-thumb:hover{
+  background:#94a3b8;
+}
+
+@media(max-width:700px){
+  .header{padding:16px}
+  .container{padding:20px 10px}
+  .card-value{font-size:19px}
+}
+
+@media (max-width:1550px){
+  .tl-header,.tl-item{
+    grid-template-columns:
+      76px 84px 66px 70px 66px 94px 70px 64px 52px 70px 78px 160px
+      minmax(205px,1fr) minmax(215px,1fr) 290px minmax(120px,.58fr);
+    gap:4px;
+    min-width:2010px;
+  }
+  .tl-item{font-size:11px}
+  .tl-header{font-size:10px}
+  .esc-toggle,.vib-toggle,.att-toggle{font-size:9px;padding:2px 3px}
+  .esc-detail,.vib-detail,.att-detail{min-width:1450px}
+  .esc-detail-inner,.vib-detail-inner,.att-detail-inner{margin-left:760px}
+}
+
+
+.land-controlled-row{
+  background:rgba(59,130,246,.10)!important;
+  box-shadow:inset 4px 0 0 #3b82f6
+}
+.land-abnormal-row{
+  background:rgba(239,68,68,.20)!important;
+  box-shadow:inset 4px 0 0 #ef4444
+}
+
+
+.flight-start-row{background:rgba(34,197,94,.16)!important;box-shadow:inset 4px 0 0 #22c55e}
+.flight-end-row{background:rgba(59,130,246,.13)!important;box-shadow:inset 4px 0 0 #3b82f6}
+.flight-takeoff-row{background:rgba(16,185,129,.11)!important;box-shadow:inset 4px 0 0 #10b981}
+.flight-landing-row{background:rgba(14,165,233,.11)!important;box-shadow:inset 4px 0 0 #0ea5e9}
+.flight-open-row{background:rgba(239,68,68,.22)!important;box-shadow:inset 4px 0 0 #ef4444}
+.flight-tag{display:inline-block;margin-right:5px;padding:1px 5px;border-radius:5px;border:1px solid rgba(148,163,184,.3);font-size:9px;color:var(--text-muted);white-space:nowrap}
+
+
+.tl-analysis{
+  color:#f59e0b;
+  font-weight:650;
+  overflow-wrap:anywhere;
+  word-break:normal;
+  min-width:0
+}
+.tl-analysis:empty::after{content:'—';color:var(--text-muted);font-weight:400}
+.system-info-row{background:transparent!important;box-shadow:none!important}
+
+
+/* Cleaner Timeline text alignment */
+.tl-system,
+.tl-analysis,
+.tl-pilot{
+  display:flex;
+  align-items:center;
+  min-width:0;
+  line-height:1.25;
+}
+
+.tl-system{
+  gap:5px;
+  flex-wrap:wrap;
+}
+
+.tl-analysis{
+  gap:5px;
+  flex-wrap:wrap;
+  padding-right:4px;
+}
+
+.tl-analysis .analysis-msg{
+  display:block;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+
+.flight-tag{
+  display:inline-flex!important;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  margin:0!important;
+  padding:2px 5px!important;
+  line-height:1!important;
+  vertical-align:middle;
+}
+
+/* Keep short critical analysis readable instead of squeezing every word */
+@media (min-width:1200px){
+  .tl-analysis{
+    font-size:10px;
+  }
+}
+
+
+/* Calibration context */
+.accel-cal-row{
+  background:rgba(99,102,241,.10)!important;
+  box-shadow:inset 4px 0 0 #6366f1!important
+}
+.accel-cal-row .tl-analysis{
+  color:#a5b4fc!important;
+  font-weight:800
+}
+
+/* V23.14 — окреме підсвічування початку/завершення радіокалібрування */
+.radio-cal-row{
+  background:rgba(14,165,233,.12)!important;
+  box-shadow:inset 4px 0 0 #0ea5e9!important
+}
+.radio-cal-row .tl-analysis{
+  color:#7dd3fc!important;
+  font-weight:800
+}
+
+
+/* Drag & Drop — додано без зміни штатного вибору файлу */
+.upload.drag-over{
+  border-color:var(--accent)!important;
+  background:rgba(34,197,94,.10)!important;
+  box-shadow:0 0 0 3px rgba(34,197,94,.10),0 0 24px var(--accent-glow)!important;
+}
+
+
+
+/* ============================================================
+   V23.10 — зрозумілий TX16S-стан безпосередньо у Timeline + випадаючі стіки
+   Mapping for this aircraft: SC=CH7, SD=CH8, SF=CH10, SH=CH6.
+   ============================================================ */
+.switches-wrap{padding:0 10px 10px}
+.switches-title{font-size:11px;font-weight:800;color:#cbd5e1;margin:0 0 7px}
+.switches-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px}
+.switch-card{border:1px solid #263548;border-radius:7px;background:#0a1017;padding:9px 10px;min-width:0}
+.switch-name{font-size:12px;font-weight:900;color:#e2e8f0}
+.switch-channel{font:10px/1.4 monospace;color:#64748b;margin-top:1px}
+.switch-state{font:11px/1.45 monospace;color:#93c5fd;margin-top:5px}
+.switch-state b{color:#f8fafc}
+.switch-active{color:#22c55e!important;font-weight:900}
+.switch-safe{color:#f59e0b!important;font-weight:900}
+.switch-stop{color:#ef4444!important;font-weight:900}
+@media(max-width:900px){.switches-grid{grid-template-columns:1fr 1fr}}
+
+/* V23.10: компактний, але зрозумілий стан перемикачів прямо у Timeline. */
+.tl-tx16s{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3px 6px;
+  min-width:0;
+  font:10px/1.25 monospace;
+}
+.tx16-chip{
+  display:block;
+  min-width:0;
+  padding:2px 5px;
+  border:1px solid #334155;
+  border-radius:4px;
+  background:#0b1118;
+  color:#cbd5e1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.tx16-chip b{color:#f8fafc}
+.tx16-chip.changed{
+  border-color:#60a5fa;
+  color:#bfdbfe;
+  background:rgba(59,130,246,.10);
+  font-weight:800;
+}
+.tx16-chip.active{color:#22c55e;border-color:rgba(34,197,94,.45)}
+.tx16-chip.stop{color:#f87171;border-color:rgba(239,68,68,.55);font-weight:900}
+.tx16-empty{color:#64748b;font:10px monospace}
+
+@media(max-width:980px){
+  #mapTelemetryPanel{height:auto!important;min-height:260px}
+}
+
+
+/* ============================================================
+   Timeline — випадаючі віртуальні стіки TX16S
+   ============================================================ */
+.tl-item{cursor:pointer}
+.tl-item:hover{background-color:rgba(96,165,250,.035)}
+.tl-item.sticks-open-row{outline:1px solid rgba(96,165,250,.55);outline-offset:-1px}
+.sticks-detail{
+  display:none;
+  min-width:1510px;
+  border-bottom:1px solid var(--border-color);
+  background:#0b1118;
+  padding:10px 16px 14px;
+}
+.sticks-detail.open{display:block}
+.sticks-detail-inner{
+  margin-left:80px;
+  max-width:1120px;
+  border:1px solid #263548;
+  border-radius:8px;
+  background:#0d141d;
+  overflow:hidden;
+}
+.sticks-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:8px 12px;
+  border-bottom:1px solid #263548;
+  color:#cbd5e1;
+  font-size:11px;
+  font-weight:800;
+}
+.sticks-head .sticks-time{color:#60a5fa;font-family:monospace}
+.sticks-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  padding:10px;
+}
+.stick-card{
+  min-width:0;
+  border:1px solid #263548;
+  border-radius:7px;
+  padding:10px;
+  background:#0a1017;
+}
+.stick-title{font-size:11px;font-weight:800;color:#e2e8f0;margin-bottom:8px}
+.stick-layout{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stick-pad{
+  position:relative;
+  width:150px;
+  height:150px;
+  flex:0 0 150px;
+  border:1px solid #40536b;
+  border-radius:12px;
+  background:#091019;
+}
+.stick-pad:before,.stick-pad:after{
+  content:'';
+  position:absolute;
+  background:#304257;
+}
+.stick-pad:before{left:50%;top:12px;bottom:12px;width:1px;transform:translateX(-.5px)}
+.stick-pad:after{top:50%;left:12px;right:12px;height:1px;transform:translateY(-.5px)}
+.stick-dot{
+  position:absolute;
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  border:2px solid #dbeafe;
+  background:#60a5fa;
+  box-shadow:0 0 10px rgba(96,165,250,.65);
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+.stick-values{font:11px/1.55 monospace;color:#93c5fd;min-width:180px}
+.stick-values b{color:#f8fafc}
+.sticks-note{padding:0 10px 10px;color:#64748b;font-size:10px;line-height:1.45}
+.sticks-empty{padding:18px 12px;color:#94a3b8;font-size:12px}
+@media(max-width:900px){
+  .sticks-grid{grid-template-columns:1fr}
+  .sticks-detail-inner{margin-left:0}
+}
+
+
+
+/* ============================================================
+   V23.14 — FIXED TIMELINE HEADER
+   ------------------------------------------------------------
+   .tl-header already stays sticky inside the Timeline itself.
+   This additional floating wrapper keeps the column names visible
+   when the whole browser page is scrolled vertically.
+   Horizontal position is synchronized with Timeline scrollLeft.
+   ============================================================ */
+.timeline-floating-header{
+  position:fixed;
+  top:0;
+  display:none;
+  overflow:hidden;
+  z-index:10000;
+  pointer-events:none;
+  background:#0f141c;
+  border:1px solid var(--border-color);
+  border-bottom-color:var(--border-highlight);
+  box-shadow:0 4px 14px rgba(0,0,0,.50);
+}
+.timeline-floating-header .tl-header{
+  position:relative!important;
+  top:auto!important;
+  z-index:1!important;
+  margin:0;
+  border-radius:0;
+  box-shadow:none;
+}
+
+/* v1.1 «Швидкість» — контрольний відбиток аналізу (UI-only). */
+.analysis-fingerprint{background:#0d131a;border:1px solid #203043;border-radius:8px;padding:12px;margin:0 0 20px}
+.analysis-fingerprint-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.analysis-fingerprint-code{font:800 15px/1.2 monospace;color:#93c5fd;letter-spacing:.04em}
+.analysis-fingerprint-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px}
+.analysis-fingerprint-item{background:#090e14;border:1px solid #1e293b;border-radius:6px;padding:8px 9px;min-width:0}
+.analysis-fingerprint-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.analysis-fingerprint-value{font:700 12px/1.35 monospace;color:#e2e8f0;overflow-wrap:anywhere}
+.analysis-fingerprint-note{margin-top:9px;font-size:11px;line-height:1.45;color:#64748b}
+
+</style>
+</head>
+<body>
+<div style="position:fixed;top:10px;right:12px;z-index:9999;font:600 11px/1.2 Arial,sans-serif;padding:6px 9px;border:1px solid rgba(120,170,220,.35);border-radius:999px;background:rgba(8,18,32,.86);color:#9dc7ef;pointer-events:none;">v1.3.3 «3D Lazy FIX»</div>
+<div class="header">
+  <div>
+    <h1>🚁 AI</h1>
+    <p>TELEMETRY ANALYZER</p>
+  </div>
+  <button class="btn-reset" id="resetBtn">📂 ВИБРАТИ НОВИЙ ЛОГ</button>
+</div>
+
+<div class="container">
+  <label class="upload" for="fileInput" id="uploadZone">
+    <div class="upload-icon">📂</div>
+    <div class="upload-title">ОБЕРІТЬ TLOG ФАЙЛ</div>
+    <div class="upload-subtitle">Аналіз польоту, VTX, температури, ESC, живлення, MAVLink та подій</div>
+  </label>
+
+  <input id="fileInput" type="file" accept=".tlog">
+
+  <div class="file-box" id="fileBox">
+    <div class="file-name" id="fileName"></div>
+    <div class="file-size" id="fileSize"></div>
+  </div>
+
+  <button class="analyze" id="analyzeButton" disabled>⏳ АНАЛІЗ...</button>
+
+  <div class="progress-container" id="progressContainer">
+    <div class="progress-header">
+      <span id="progressText">Ініціалізація...</span>
+      <span id="progressPercent">0%</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <div class="error" id="errorBox"></div>
+
+  <div class="results" id="results">
+    <div id="aiBlock" class="ai-box">
+      <h3 id="aiTitle" class="ai-title"></h3>
+      <ul id="aiAlerts" class="ai-list"></ul>
+    </div>
+
+    <div class="section-title">🚁 ДИНАМІКА ПОЛЬОТУ</div>
+    <div class="grid" id="flightGrid"></div>
+
+    <div class="section-title">🔋 ЕНЕРГОСИСТЕМА</div>
+    <div class="grid" id="batteryGrid"></div>
+
+    <div class="section-title">📡 ЗВ'ЯЗОК ТА СТАН СЕНСОРІВ</div>
+    <div class="grid" id="healthGrid"></div>
+
+    <div class="section-title">📺 ВІДЕОПЕРЕДАВАЧ / VTX</div>
+    <div class="grid" id="videoGrid"></div>
+
+    <div class="section-title">🎮 КАНАЛИ ПУЛЬТА</div>
+    <div class="grid" id="rcInputsGrid"></div>
+
+    <div class="section-title">🧪 КОНТРОЛЬНА СУМА АНАЛІЗУ</div>
+    <div class="analysis-fingerprint" id="analysisFingerprint">
+      <div class="analysis-fingerprint-head">
+        <div style="font-size:12px;color:#94a3b8;font-weight:700;">Контрольний код ключових результатів</div>
+        <div class="analysis-fingerprint-code" id="analysisFingerprintCode">—</div>
+      </div>
+      <div class="analysis-fingerprint-grid" id="analysisFingerprintGrid"></div>
+      <div class="analysis-fingerprint-note">
+        Службовий блок v1.2. Він лише читає готовий результат після аналізу й не змінює TLOG, Timeline, карту, NED/DR, AI-висновки або будь-які розрахунки. Однаковий контрольний код у двох версіях означає, що вибраний набір ключових результатів збігається.
+      </div>
+    </div>
+
+    <div class="section-title" id="mapSectionTitle">🗺 ТРАЄКТОРІЯ — 2D / 3D • NED + РОЗРАХУНКОВИЙ ALT HOLD</div>
+    <div style="background:#121820;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;color:#94a3b8;font-size:12px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span id="mapAxisHint">N ↑ / E →</span>
+          <div style="display:inline-flex;border:1px solid #334155;border-radius:7px;overflow:hidden;background:#0b1118;">
+            <button type="button" id="mapMode2D" style="height:34px;padding:0 14px;border:0;border-right:1px solid #334155;background:rgba(34,197,94,.13);color:#4ade80;font-size:12px;font-weight:900;cursor:pointer;">2D</button>
+            <button type="button" id="mapMode3D" style="height:34px;padding:0 14px;border:0;background:#0f141c;color:#94a3b8;font-size:12px;font-weight:900;cursor:pointer;">3D</button>
+          </div>
+          <div id="map3dPresets" style="display:none;gap:5px;align-items:center;flex-wrap:wrap;">
+            <button type="button" id="map3dTop" title="Вид зверху" style="height:32px;padding:0 10px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#cbd5e1;font-size:11px;font-weight:800;cursor:pointer;">ЗВЕРХУ</button>
+            <button type="button" id="map3dNorth" title="Профіль North / Altitude" style="height:32px;padding:0 10px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#cbd5e1;font-size:11px;font-weight:800;cursor:pointer;">N / ALT</button>
+            <button type="button" id="map3dEast" title="Профіль East / Altitude" style="height:32px;padding:0 10px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#cbd5e1;font-size:11px;font-weight:800;cursor:pointer;">E / ALT</button>
+            <button type="button" id="map3dReset" title="Стандартний 3D ракурс" style="height:32px;padding:0 10px;border:1px solid #3b82f6;border-radius:6px;background:rgba(59,130,246,.10);color:#93c5fd;font-size:11px;font-weight:800;cursor:pointer;">RESET 3D</button>
+          </div>
+        </div>
+        <span id="mapDrInfo">Очікування даних...</span>
+      </div>
+
+      <div id="mapDrTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+
+      <!-- V23.17: вибір джерела азимуту антени -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border:1px solid #203043;border-radius:7px;background:#0d131a;">
+        <span style="color:#94a3b8;font-size:12px;font-weight:700;">Напрямок АС:</span>
+        <button type="button" id="antennaModeAuto" style="height:34px;padding:0 12px;border:1px solid #22c55e;border-radius:6px;background:rgba(34,197,94,.12);color:#4ade80;font-size:12px;font-weight:800;cursor:pointer;">ЙМОВІРНИЙ</button>
+        <button type="button" id="antennaModeManual" style="height:34px;padding:0 12px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#94a3b8;font-size:12px;font-weight:800;cursor:pointer;">ВРУЧНУ</button>
+        <div id="antennaManualBox" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+          <label for="antennaManualAz" style="color:#94a3b8;font-size:12px;">Азимут:</label>
+          <input id="antennaManualAz" type="number" min="0" max="359.9" step="0.1" inputmode="decimal" placeholder="0…359.9" style="width:105px;height:34px;border:1px solid #334155;border-radius:6px;background:#090e14;color:#f1f5f9;padding:0 9px;font:12px monospace;outline:none;">
+          <span style="color:#94a3b8;font-size:12px;">°</span>
+          <button type="button" id="antennaManualApply" style="height:34px;padding:0 12px;border:1px solid #3b82f6;border-radius:6px;background:rgba(59,130,246,.10);color:#93c5fd;font-size:12px;font-weight:800;cursor:pointer;">ЗАСТОСУВАТИ</button>
+        </div>
+        <span id="antennaModeStatus" style="margin-left:auto;color:#64748b;font:11px monospace;">AUTO</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(0,2.1fr) minmax(320px,.9fr);gap:10px;align-items:stretch;">
+        <div style="height:560px;border:1px solid #203043;border-radius:7px;background:#090e14;overflow:hidden;position:relative;">
+          <svg id="mapDrSvg" viewBox="0 0 1000 600" style="width:100%;height:100%;display:block;cursor:grab;touch-action:none"></svg>
+          <div id="mapDrSource" style="position:absolute;left:10px;top:10px;padding:5px 8px;border:1px solid #334155;border-radius:4px;background:rgba(9,14,20,.88);color:#94a3b8;font:11px monospace;line-height:1.45;pointer-events:none;max-width:280px;">—</div>
+          <div id="mapInteractionHint" style="position:absolute;left:12px;bottom:10px;padding:4px 7px;border-radius:5px;background:rgba(9,14,20,.78);color:#7dd3fc;font:10px monospace;pointer-events:none;">🖐 тягни карту • колесо = zoom • подвійний клік = reset</div>
+          <div style="position:absolute;right:10px;top:10px;display:flex;gap:6px;align-items:center;">
+            <button type="button" id="mapZoomOut" title="Віддалити" style="width:38px;height:38px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#f1f5f9;font-size:21px;font-weight:800;cursor:pointer;">−</button>
+            <button type="button" id="mapZoomReset" title="Скинути zoom і позицію карти" style="min-width:56px;height:38px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#94a3b8;font:11px monospace;cursor:pointer;">100%</button>
+            <button type="button" id="mapZoomIn" title="Наблизити" style="width:38px;height:38px;border:1px solid #334155;border-radius:6px;background:#0f141c;color:#f1f5f9;font-size:21px;font-weight:800;cursor:pointer;">+</button>
+          </div>
+        </div>
+        <div id="mapTelemetryPanel" style="height:560px;border:1px solid #203043;border-radius:7px;background:#0d131a;padding:14px;overflow:auto;">
+          <div style="font-size:13px;font-weight:800;color:#f1f5f9;margin-bottom:8px;">ТЕЛЕМЕТРІЯ ТОЧКИ</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:1.55;">Натисни на точку траєкторії. Тут відобразяться всі дані та події на цей телеметричний час.</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;color:#64748b;font-size:11px;line-height:1.45;">
+        LOITER — зелений (фактичний LOCAL_POSITION_NED). ALT HOLD — червоний пунктир (розрахунок). LAND — жовтий. RTL — коричневий.
+        Кружки на траєкторії — телеметричні точки; натисни на точку, щоб побачити дані справа.
+        Сектор АС будується у правильній NED-геометрії: 1 м North = 1 м East. У 3D висота також має масштаб 1:1 до горизонтальних метрів; 3D — лише візуалізація і не змінює жодного розрахунку.
+      </div>
+    </div>
+
+    <div class="section-title">⏱ ХРОНОЛОГІЯ ТА ПОДІЇ — ЧОРНА СКРИНЬКА</div>
+    <div style="margin:8px 0 10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+      <b>dBm:</b> ≥ -85 — норма; &lt; -85…-90 — підсипання відео; -90…-100 — втрата відео / телеметрія присутня; -128 — відео й телеметрія відсутні.
+    </div>
+    <div class="timeline" id="timelineContainer"></div>
+
+    <div class="timeline-scrollbar-fixed" id="timelineScrollbarFixed">
+      <div class="timeline-scrollbar-inner" id="timelineScrollbarInner"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedFile=null;
+
+const UI={
+  input:document.getElementById('fileInput'),
+  uploadZone:document.getElementById('uploadZone'),
+  fileBox:document.getElementById('fileBox'),
+  fileName:document.getElementById('fileName'),
+  fileSize:document.getElementById('fileSize'),
+  btn:document.getElementById('analyzeButton'),
+  resetBtn:document.getElementById('resetBtn'),
+  progress:document.getElementById('progressContainer'),
+  progressText:document.getElementById('progressText'),
+  progressPercent:document.getElementById('progressPercent'),
+  progressFill:document.getElementById('progressFill'),
+  error:document.getElementById('errorBox'),
+  results:document.getElementById('results')
+};
+
+function getVoltageClass(v){
+  if(typeof v!=='number'||Number.isNaN(v))return '';
+  if(v>=20&&v<=25.2)return 'val-success';
+  if(v>=18&&v<20)return 'val-warning';
+  if(v<18)return 'val-danger';
+  return '';
+}
+function formatVoltageColored(v){
+  if(typeof v!=='number'||Number.isNaN(v))return '—';
+  return `<span class="${getVoltageClass(v)}">${v.toFixed(2)} V</span>`;
+}
+function getCurrentClass(a){
+  if(typeof a!=='number'||Number.isNaN(a))return '';
+  return a>80?'val-danger':'';
+}
+function formatCurrentColored(a){
+  if(typeof a!=='number'||Number.isNaN(a))return '—';
+  return `<span class="${getCurrentClass(a)}">${a.toFixed(1)} A</span>`;
+}
+function getEscTempClass(t){
+  if(typeof t!=='number'||Number.isNaN(t))return '';
+  if(t>=85)return 'val-danger';
+  if(t>=70)return 'val-warning';
+  return 'val-success';
+}
+function formatEscTemp(t){
+  if(typeof t!=='number'||Number.isNaN(t))return '—';
+  return `<span class="${getEscTempClass(t)}">${t.toFixed(0)} °C</span>`;
+}
+
+function setSelectedTlog(file){
+  if(!file)return false;
+
+  const name=String(file.name||'');
+  if(!name.toLowerCase().endsWith('.tlog')){
+    UI.error.textContent='❌ Потрібен файл формату .tlog';
+    UI.error.style.display='block';
+    return false;
+  }
+
+  selectedFile=file;
+  UI.error.style.display='none';
+  UI.results.style.display='none';
+  UI.uploadZone.classList.remove('drag-over');
+  UI.uploadZone.style.display='none';
+  UI.fileBox.style.display='block';
+  UI.fileName.textContent=name;
+  UI.fileSize.textContent=formatBytes(file.size);
+  UI.btn.disabled=false;
+  UI.btn.className='analyze active';
+  UI.btn.textContent='🚀 ПОЧАТИ АНАЛІЗ';
+
+  // V23.7: кнопку вибору нового TLOG показуємо одразу після вибору файлу,
+  // а не лише після завершення аналізу. Тому сторінку оновлювати не потрібно.
+  UI.resetBtn.style.display='inline-block';
+  return true;
+}
+
+/* Штатний вибір через Провідник лишається без змін */
+UI.input.addEventListener('change',e=>{
+  setSelectedTlog(e.target.files?.[0]);
+});
+
+/* Перетягування TLOG прямо на існуюче вікно вибору */
+UI.uploadZone.addEventListener('dragenter',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  UI.uploadZone.classList.add('drag-over');
+});
+
+UI.uploadZone.addEventListener('dragover',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  if(e.dataTransfer)e.dataTransfer.dropEffect='copy';
+  UI.uploadZone.classList.add('drag-over');
+});
+
+UI.uploadZone.addEventListener('dragleave',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+
+  // Не прибираємо підсвітку при переході між дочірніми елементами label.
+  if(!UI.uploadZone.contains(e.relatedTarget)){
+    UI.uploadZone.classList.remove('drag-over');
+  }
+});
+
+UI.uploadZone.addEventListener('drop',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  UI.uploadZone.classList.remove('drag-over');
+
+  const file=e.dataTransfer?.files?.[0];
+  if(file)setSelectedTlog(file);
+});
+
+/* Не даємо Chrome відкрити .tlog як окрему сторінку,
+   якщо файл випадково відпустили поруч із зоною. */
+window.addEventListener('dragover',e=>{
+  if(e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')){
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('drop',e=>{
+  if(e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')){
+    if(!UI.uploadZone.contains(e.target))e.preventDefault();
+  }
+});
+
+UI.resetBtn.addEventListener('click',()=>{
+  // V23.7: очищаємо попередній файл/результати і відразу відкриваємо Провідник.
+  resetForm();
+  setTimeout(()=>UI.input.click(),0);
+});
+
+function resetForm(){
+  selectedFile=null;
+  UI.input.value='';
+  UI.results.style.display='none';
+  UI.fileBox.style.display='none';
+  UI.progress.style.display='none';
+  UI.error.style.display='none';
+  UI.resetBtn.style.display='none';
+  UI.uploadZone.style.display='block';
+  UI.btn.disabled=true;
+  UI.btn.className='analyze';
+  UI.btn.textContent='⏳ АНАЛІЗ...';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// =========================================================
+// GitHub Pages -> Render API
+// Google Apps Script більше не використовується.
+// TLOG передається напряму як multipart/form-data без Base64.
+// =========================================================
+const API_BASE_URL = 'http://127.0.0.1:8765';
+
+UI.btn.addEventListener('click',async()=>{
+  if(!selectedFile)return;
+  UI.btn.disabled=true;
+  UI.btn.className='analyze';
+  UI.btn.textContent='РОЗШИФРОВКА TLOG...';
+  UI.error.style.display='none';
+  UI.progress.style.display='block';
+
+  try{
+    updateProgress(10,'Пробудження сервера...');
+    await pingServerAsync();
+
+    updateProgress(35,'Передача TLOG на сервер...');
+    const result=await analyzeOnServer(selectedFile);
+
+    if(!result||result.success===false){
+      throw new Error(result?.error||'Помилка сервера');
+    }
+
+    updateProgress(85,'Формування хронології...');
+    await new Promise(resolve=>setTimeout(resolve,100));
+    updateProgress(100,'Готово!');
+
+    setTimeout(()=>renderResults(result),250);
+  }catch(err){
+    UI.progress.style.display='none';
+    UI.error.textContent='❌ '+(err?.message||err);
+    UI.error.style.display='block';
+  }finally{
+    UI.btn.disabled=false;
+    UI.btn.className='analyze active';
+    UI.btn.textContent='🚀 ПОВТОРИТИ АНАЛІЗ';
+  }
+});
+
+async function pingServerAsync(){
+  try{
+    const response=await fetch(API_BASE_URL+'/health',{
+      method:'GET',
+      cache:'no-store'
+    });
+    if(!response.ok){
+      throw new Error('HTTP '+response.status);
+    }
+    return true;
+  }catch(error){
+    throw new Error('Не вдалося підключитися до Python API: '+(error?.message||error));
+  }
+}
+
+async function analyzeOnServer(file){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),600000);
+
+  try{
+    const formData=new FormData();
+    formData.append('file',file,file.name);
+
+    const response=await fetch(API_BASE_URL+'/analyze',{
+      method:'POST',
+      body:formData,
+      signal:controller.signal
+    });
+
+    const text=await response.text();
+
+    if(!response.ok){
+      throw new Error('Python API HTTP '+response.status+': '+text.slice(0,1000));
+    }
+
+    try{
+      return JSON.parse(text);
+    }catch(e){
+      throw new Error('Python API повернув не JSON: '+text.slice(0,1000));
+    }
+  }catch(error){
+    if(error?.name==='AbortError'){
+      throw new Error('Перевищено час аналізу (10 хв).');
+    }
+    throw error;
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
+function updateProgress(percent,text){
+  UI.progressFill.style.width=percent+'%';
+  UI.progressPercent.textContent=percent+'%';
+  UI.progressText.textContent=text;
+}
+
+function formatBytes(bytes){
+  if(!bytes)return '0 B';
+  const k=1024;
+  const sizes=['B','KB','MB','GB'];
+  const i=Math.floor(Math.log(bytes)/Math.log(k));
+  return parseFloat((bytes/Math.pow(k,i)).toFixed(2))+' '+sizes[i];
+}
+
+function createCard(title,value,desc=''){
+  return `
+    <div class="card">
+      <div class="card-title">${title}</div>
+      <div class="card-value">${value}</div>
+      ${desc?`<div class="card-desc">${desc}</div>`:''}
+    </div>
+  `;
+}
+
+// v1.1 «Швидкість» — детермінований контрольний відбиток ключових результатів.
+// ВАЖЛИВО: це UI-only перевірка; вона нічого не записує назад у data.
+function analysisFingerprintPayload(data){
+  const f=data?.flight||{};
+  const b=data?.battery||{};
+  const r=data?.radio||{};
+  const v=data?.video||{};
+  const h=data?.health||{};
+  const a=data?.ai||{};
+  const ant=a?.antennaAnalysis||{};
+  const esc=Array.isArray(h.esc)?h.esc:[];
+  return {
+    duration:String(f.durationText||''),
+    maxAltitude:Number.isFinite(+f.maxAltitude)?+f.maxAltitude:null,
+    maxSpeed:Number.isFinite(+f.maxSpeed)?+f.maxSpeed:null,
+    maxRoll:Number.isFinite(+f.maxRoll)?+f.maxRoll:null,
+    maxPitch:Number.isFinite(+f.maxPitch)?+f.maxPitch:null,
+    modes:String(f.modes||''),
+    flightSessions:Number.isFinite(+f.flightSessionCount)?+f.flightSessionCount:null,
+    rpmDropEvents:Number.isFinite(+f.rpmDropEventCount)?+f.rpmDropEventCount:null,
+    thrustLossEvents:Number.isFinite(+f.potentialThrustLossCount)?+f.potentialThrustLossCount:null,
+    armVoltage:Number.isFinite(+b.armVoltage)?+b.armVoltage:null,
+    minVoltage:Number.isFinite(+b.minVoltage)?+b.minVoltage:null,
+    maxCurrent:Number.isFinite(+b.maxCurrent)?+b.maxCurrent:null,
+    voltageSag:Number.isFinite(+b.voltageSag)?+b.voltageSag:null,
+    rssi:String(r.rssi||''),
+    dbm:String(r.telemRssi||''),
+    maxDropout:Number.isFinite(+r.maxDropout)?+r.maxDropout:null,
+    videoFreq:Number.isFinite(+v.frequency)?+v.frequency:null,
+    vtxChanges:Number.isFinite(+v.changeCount)?+v.changeCount:null,
+    vib:[h.vibX,h.vibY,h.vibZ].map(x=>Number.isFinite(+x)?+x:null),
+    fcTemp:String(h.maxTemp||''),
+    escMax:esc.slice(0,4).map(x=>x&&Number.isFinite(+x.maxTemp)?+x.maxTemp:null),
+    disarmDetected:!!a.disarmDetected,
+    landedSuccessfully:!!a.landedSuccessfully,
+    isCritical:!!a.isCritical,
+    antennaCenter:Number.isFinite(+ant.center)?Math.round(+ant.center*10)/10:null,
+    antennaConfidence:Number.isFinite(+ant.confidence)?+ant.confidence:null
+  };
+}
+
+function fnv1a32Hex(text){
+  let h=0x811c9dc5;
+  for(let i=0;i<text.length;i++){
+    h^=text.charCodeAt(i);
+    h=Math.imul(h,0x01000193)>>>0;
+  }
+  return h.toString(16).toUpperCase().padStart(8,'0');
+}
+
+function renderAnalysisFingerprint(data){
+  const codeEl=document.getElementById('analysisFingerprintCode');
+  const grid=document.getElementById('analysisFingerprintGrid');
+  if(!codeEl||!grid)return;
+  const p=analysisFingerprintPayload(data);
+  const code='CHK-'+fnv1a32Hex(JSON.stringify(p));
+  codeEl.textContent=code;
+  const items=[
+    ['Політ', `${p.duration||'—'} • ${p.modes||'—'}`],
+    ['MAX ALT / SPEED', `${p.maxAltitude??'—'} м • ${p.maxSpeed??'—'} м/с`],
+    ['АКБ', `ARM ${p.armVoltage??'—'} V • MIN ${p.minVoltage??'—'} V • MAX ${p.maxCurrent??'—'} A`],
+    ['RPM / Thrust Loss', `${p.rpmDropEvents??'—'} / ${p.thrustLossEvents??'—'}`],
+    ['RADIO', `${p.rssi||'—'} • ${p.dbm||'—'}`],
+    ['VTX', `${p.videoFreq??'—'} MHz • змін ${p.vtxChanges??'—'}`],
+    ['FC / ESC MAX', `${p.fcTemp||'—'} • ${p.escMax.map(x=>x??'—').join('/')}`],
+    ['Сесії / DISARM', `${p.flightSessions??'—'} • ${p.disarmDetected?'ТАК':'НІ'}`]
+  ];
+  grid.innerHTML=items.map(([label,value])=>`<div class="analysis-fingerprint-item"><div class="analysis-fingerprint-label">${label}</div><div class="analysis-fingerprint-value">${value}</div></div>`).join('');
+}
+
+function renderResults(data){
+  UI.progress.style.display='none';
+  UI.results.style.display='block';
+  UI.resetBtn.style.display='inline-block';
+  renderAnalysisFingerprint(data);
+
+  const aiBlock=document.getElementById('aiBlock');
+  const aiTitle=document.getElementById('aiTitle');
+  const flightFinished=data.ai?.landedSuccessfully||data.ai?.disarmDetected;
+
+  if(flightFinished&&data.ai?.isCritical){
+    aiBlock.className='ai-box returned';
+    aiTitle.style.color='var(--warning)';
+  }else if(flightFinished){
+    aiBlock.className='ai-box';
+    aiTitle.style.color='var(--success)';
+  }else if(data.ai?.isCritical){
+    aiBlock.className='ai-box critical';
+    aiTitle.style.color='var(--danger)';
+  }else{
+    aiBlock.className='ai-box';
+    aiTitle.style.color='var(--success)';
+  }
+
+  aiTitle.textContent=data.ai?.verdict||'Результати';
+
+  // V23.11 — короткий підсумок фактичних активацій TX16S у верхньому AI-блоці.
+  // SC+SF: подією вважаємо фронт SF OFF -> ON і показуємо положення SC у цю мить.
+  // SD+SH: подією вважаємо фронт SH НЕ НАТИСНУТО -> НАТИСНУТО і показуємо положення SD.
+  // Це лише аналіз телеметрії: код не створює і не відправляє жодних RC-команд.
+  function buildTx16ActivationAlerts(timeline){
+    const rows=Array.isArray(timeline)?timeline:[];
+    const sfEvents=[];
+    const shEvents=[];
+    let prevSf=null;
+    let prevSh=null;
+
+    rows.forEach(row=>{
+      if(!row)return;
+      const sc=rcPwmValue(row,7);
+      const sd=rcPwmValue(row,8);
+      const sf=tx16HighActive(rcPwmValue(row,10));
+      const sh=tx16HighActive(rcPwmValue(row,6));
+
+      // Перший валідний стан лише запам'ятовуємо; подія — саме зміна у активний стан.
+      if(sf!==null){
+        if(prevSf===false && sf===true){
+          sfEvents.push({
+            time:row.time||'',
+            selector:tx16ThreePosHuman(sc),
+            pwm:rcPwmValue(row,10)
+          });
+        }
+        prevSf=sf;
+      }
+
+      if(sh!==null){
+        if(prevSh===false && sh===true){
+          shEvents.push({
+            time:row.time||'',
+            selector:tx16ThreePosHuman(sd),
+            pwm:rcPwmValue(row,6)
+          });
+        }
+        prevSh=sh;
+      }
+    });
+
+    const out=[];
+
+    if(sfEvents.length){
+      sfEvents.forEach((ev,i)=>{
+        const n=sfEvents.length>1?` №${i+1}`:'';
+        out.push(
+          `<span class="ai-jump" data-jump-time="${ev.time}">`+
+          `🎚 <b>SC + SF — активація${n}:</b> ${ev.time}; `+
+          `SC: ${ev.selector}; SF: УВІМКНЕНО`+
+          `${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. `+
+          `Натисніть, щоб перейти до цього рядка Timeline.`+
+          `</span>`
+        );
+      });
+    }else{
+      out.push('🎚 <b>SC + SF:</b> активацій SF у TLOG не зафіксовано.');
+    }
+
+    if(shEvents.length){
+      shEvents.forEach((ev,i)=>{
+        const n=shEvents.length>1?` №${i+1}`:'';
+        out.push(
+          `<span class="ai-jump" data-jump-time="${ev.time}">`+
+          `🛑 <b>SD + SH — активація${n}:</b> ${ev.time}; `+
+          `SD: ${ev.selector}; SH: НАТИСНУТО`+
+          `${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. `+
+          `Натисніть, щоб перейти до цього рядка Timeline.`+
+          `</span>`
+        );
+      });
+    }else{
+      out.push('🛑 <b>SD + SH:</b> натискань SH у TLOG не зафіксовано.');
+    }
+
+    return out;
+  }
+
+  const combinedAiAlerts=[
+    ...(data.ai?.alerts||[]),
+    ...buildTx16ActivationAlerts(data.timeline)
+  ];
+
+  document.getElementById('aiAlerts').innerHTML=combinedAiAlerts
+    .map(x=>{
+      const explicit=String(x).match(/data-jump-time=["']([^"']+)["']/i);
+      const plain=String(x).replace(/<[^>]+>/g,' ');
+      const fallback=plain.match(/-?\d{2}:\d{2}\.\d{3}/);
+      const jumpTime=explicit?.[1]||fallback?.[0]||'';
+      return `<li class="${jumpTime?'ai-clickable':''}" ${jumpTime?`data-jump-time="${jumpTime}" title="Перейти до рядка Timeline"`:''}>${x}</li>`;
+    })
+    .join('');
+
+  document.getElementById('flightGrid').innerHTML=`
+    ${createCard('Час польоту',data.flight?.durationText||'—')}
+    ${createCard(
+      'Макс. висота',
+      (data.flight?.maxAltitude??'—')+' м',
+      `Джерело: ${data.flight?.altitudeSource||'—'}`
+    )}
+    <div class="card" id="maxDistanceCard">
+      <div class="card-title" id="maxDistanceTitle">Макс. дальність</div>
+      <div class="card-value" id="maxDistanceValue">${(data.flight?.maxDistance??'—')} м</div>
+      <div class="card-desc" id="maxDistanceDesc">${Number(data.flight?.maxDistance)>0.5?'Фактична координатна дальність':'Координатна дальність не підтверджена'}</div>
+    </div>
+    ${createCard('Макс. швидкість',(data.flight?.maxSpeed??'—')+' м/с')}
+    ${createCard('Крен',(data.flight?.maxRoll??'—')+'°')}
+    ${createCard('Тангаж',(data.flight?.maxPitch??'—')+'°')}
+    ${createCard('Режими',data.flight?.modes||'—')}
+  `;
+
+  document.getElementById('batteryGrid').innerHTML=`
+    ${createCard(
+      'Напруга старту',
+      formatVoltageColored(data.battery?.armVoltage),
+      'Напруга в момент ARM'
+    )}
+    ${createCard(
+      'Мінімальна напруга',
+      formatVoltageColored(data.battery?.minVoltage),
+      'Мінімальне значення за політ'
+    )}
+    ${createCard(
+      'Просадка',
+      typeof data.battery?.voltageSag==='number'
+        ?data.battery.voltageSag.toFixed(2)+' V'
+        :'—',
+      'Різниця між ARM та мінімальною'
+    )}
+    ${createCard(
+      'Макс. струм',
+      formatCurrentColored(data.battery?.maxCurrent),
+      typeof data.battery?.maxCurrent==='number'&&data.battery.maxCurrent>80
+        ?'Перевищення 80 A'
+        :'Піковий струм за політ'
+    )}
+  `;
+
+  const escSummary=Array.isArray(data.health?.esc)?data.health.esc:[];
+  const escMaxTemp=escSummary
+    .map(x=>x?.maxTemp)
+    .filter(x=>typeof x==='number')
+    .sort((a,b)=>b-a)[0];
+
+  document.getElementById('healthGrid').innerHTML=`
+    ${createCard('RC RSSI',data.radio?.rssi||'—')}
+    ${createCard('RADIO STATUS',data.radio?.telemRssi||'—')}
+    ${createCard('Макс. RF просідання',(data.radio?.maxDropout??'—')+' с')}
+    ${createCard('Температура FC',data.health?.maxTemp||'—')}
+    ${createCard(
+      'Температура ESC',
+      typeof escMaxTemp==='number'?formatEscTemp(escMaxTemp):'—',
+      'Максимальна температура серед ESC1–ESC4'
+    )}
+    ${createCard(
+      'Вібрації X/Y/Z',
+      `${data.health?.vibX??'—'} / ${data.health?.vibY??'—'} / ${data.health?.vibZ??'—'}`
+    )}
+  `;
+
+  const video=data.video||{};
+  document.getElementById('videoGrid').innerHTML=`
+    ${createCard(
+      'VTX / Відеочастота',
+      typeof video.frequency==='number'
+        ?`${video.frequency} MHz`
+        :'—',
+      'Розрахунок за CH7 + CH8'
+    )}
+    ${createCard('Діапазон CH7',video.band?video.band+' GHz':'—')}
+    ${createCard('Канал CH8',video.channel||'—')}
+    ${createCard('Змін VTX',video.changeCount??0)}
+    ${createCard('CH7 PWM',video.ch7Pwm?video.ch7Pwm+' us':'—')}
+    ${createCard('CH8 PWM',video.ch8Pwm?video.ch8Pwm+' us':'—')}
+  `;
+
+  // V23.9: summary cards now show BOTH the PWM range and the last/current
+  // interpreted switch state. Timeline events show every detected transition.
+  const sw=data.tx16Switches||{};
+  const switchSummary=(name,fallbackRange)=>{
+    const x=sw[name];
+    if(!x)return fallbackRange||'—';
+    const pwm=typeof x.pwm==='number'?`${Math.round(x.pwm)} us`:'—';
+    const range=(typeof x.minPwm==='number'&&typeof x.maxPwm==='number')
+      ?`${Math.round(x.minPwm)}–${Math.round(x.maxPwm)} us`
+      :(fallbackRange||'—');
+    return `${x.state||'—'} • ${pwm}<br><span style="font-size:11px;color:#64748b">діапазон: ${range}</span>`;
+  };
+
+  // FC/FS are derived only from already returned Timeline RC_CHANNELS,
+  // so backend calculations and previous analysis results stay identical.
+  const timelineRows=Array.isArray(data.timeline)?data.timeline:[];
+  const collectChannel=(ch)=>{
+    const vals=timelineRows
+      .map(r=>rcPwmValue(r,ch))
+      .filter(v=>typeof v==='number'&&Number.isFinite(v));
+    if(!vals.length)return {last:null,min:null,max:null};
+    return {last:vals[vals.length-1],min:Math.min(...vals),max:Math.max(...vals)};
+  };
+  const fcUi=collectChannel(15);
+  const fsUi=collectChannel(11);
+  const uiSwitchSummary=(label,obj,stateFn)=>{
+    if(obj.last===null)return '—';
+    return `${stateFn(obj.last)} • ${Math.round(obj.last)} us<br><span style="font-size:11px;color:#64748b">діапазон: ${Math.round(obj.min)}–${Math.round(obj.max)} us</span>`;
+  };
+
+  document.getElementById('rcInputsGrid').innerHTML=`
+    ${createCard('CH1 Roll',data.radioChannels?.ch1||'—')}
+    ${createCard('CH2 Pitch',data.radioChannels?.ch2||'—')}
+    ${createCard('CH3 Throttle',data.radioChannels?.ch3||'—')}
+    ${createCard('CH4 Yaw',data.radioChannels?.ch4||'—')}
+    ${createCard('SH — CH6',switchSummary('SH',data.radioChannels?.ch6),'Поточний стан + PWM; зміни є в Timeline')}
+    ${createCard('SC — CH7',switchSummary('SC',data.radioChannels?.ch7),'3-позиційний: поточна позиція + PWM; зміни є в Timeline')}
+    ${createCard('SD — CH8',switchSummary('SD',data.radioChannels?.ch8),'3-позиційний: поточна позиція + PWM; зміни є в Timeline')}
+    ${createCard('SF — CH10',switchSummary('SF',data.radioChannels?.ch10),'2-позиційний: OFF / ON + PWM; зміни є в Timeline')}
+    ${createCard('FC — CH15',uiSwitchSummary('FC',fcUi,tx16FcHuman),'UI-only: підтверджений канал CH15; розрахунки не змінюються')}
+    ${createCard('FS — CH11',uiSwitchSummary('FS',fsUi,tx16FsHuman),'UI-only: підтверджений канал CH11; розрахунки не змінюються')}
+    ${createCard(
+      'Радіокалібрування',
+      data.flight?.radioCalibration?.detected
+        ?`ВИЯВЛЕНО • ${data.flight.radioCalibration.confidence??0}%`
+        :'Не виявлено',
+      data.flight?.radioCalibration?.detected
+        ?`CH: ${(data.flight.radioCalibration.fullRangeChannels||[]).map(x=>'CH'+x).join(', ')||'—'} • переходів: ${data.flight.radioCalibration.transitionCount??0}`
+        :'Автоматична перевірка проходження CH1–CH4 через MIN/CENTER/MAX'
+    )}
+
+  `;
+
+  renderTimelineTable(data.timeline,'timelineContainer');
+  bindAiTimelineJumps();
+}
+
+function renderEscDetail(escArray,rpmAnalysis=null){
+  if(!Array.isArray(escArray)||escArray.length===0){
+    return `<div class="esc-no-data">Немає ESC телеметрії для цього моменту.</div>`;
+  }
+
+  const useful=escArray.filter(
+    esc=>esc&&(
+      typeof esc.temp==='number'||
+      typeof esc.rpm==='number'||
+      typeof esc.current==='number'
+    )
+  );
+
+  if(useful.length===0){
+    return `<div class="esc-no-data">Немає ESC телеметрії для цього моменту.</div>`;
+  }
+
+  const pairHtml=rpmAnalysis&&Array.isArray(rpmAnalysis.pairs)
+    ?rpmAnalysis.pairs.map(pair=>{
+        const diff=typeof pair.differencePct==='number'
+          ?pair.differencePct.toFixed(1)+'%'
+          :'—';
+        const cls=pair.isCritical
+          ?'rpm-critical-value'
+          :(pair.isWarning?'rpm-warning-value':'att-normal-value');
+        const low=pair.lowerMotor?`Motor ${pair.lowerMotor}`:'—';
+        return `<div class="esc-no-data ${cls}">
+          Діагональ M${pair.pair}: різниця ${diff}; нижчий RPM: ${low}
+        </div>`;
+      }).join('')
+    :'';
+
+  return `
+    <div class="esc-detail-header">
+      <div>ESC</div>
+      <div>Темп.</div>
+      <div>RPM</div>
+      <div>Струм</div>
+    </div>
+    ${useful.map(esc=>`
+      <div class="esc-detail-row">
+        <div>ESC${esc.id}</div>
+        <div>${formatEscTemp(esc.temp)}</div>
+        <div>${typeof esc.rpm==='number'?Math.round(esc.rpm):'—'}</div>
+        <div>${typeof esc.current==='number'?esc.current.toFixed(1)+' A':'—'}</div>
+      </div>
+    `).join('')}
+    ${pairHtml}
+    <div class="esc-no-data">
+      Порівняння діагоналей: M1↔M2 та M3↔M4.
+      Критична різниця: ≥ ${rpmAnalysis?.criticalThresholdPct??35}%.
+    </div>
+  `;
+}
+
+
+function renderVibrationDetail(vib){
+  if(!vib||typeof vib.x!=='number'||typeof vib.y!=='number'||typeof vib.z!=='number'){
+    return `<div class="esc-no-data">Немає даних VIBRATION для цього моменту.</div>`;
+  }
+
+  const threshold=typeof vib.threshold==='number'?vib.threshold:36;
+  const fmt=value=>{
+    const cls=value>=threshold?'vib-critical-value':'vib-normal-value';
+    return `<span class="${cls}">${value.toFixed(1)}</span>`;
+  };
+
+  return `
+    <div class="vib-detail-header">
+      <div>Стан</div>
+      <div>Vibe X</div>
+      <div>Vibe Y</div>
+      <div>Vibe Z</div>
+    </div>
+    <div class="vib-detail-row">
+      <div class="${vib.isCritical?'vib-critical-value':'vib-normal-value'}">
+        ${vib.isCritical?'КРИТИЧНО':'НОРМА'}
+      </div>
+      <div>${fmt(vib.x)}</div>
+      <div>${fmt(vib.y)}</div>
+      <div>${fmt(vib.z)}</div>
+    </div>
+    <div class="esc-no-data">Критичний поріг: ≥ ${threshold.toFixed(0)}</div>
+  `;
+}
+
+
+function renderAttitudeDetail(att){
+  if(!att||typeof att.roll!=='number'||typeof att.pitch!=='number'||typeof att.yaw!=='number'){
+    return `<div class="esc-no-data">Немає даних ATTITUDE для цього моменту.</div>`;
+  }
+
+  const threshold=typeof att.threshold==='number'?att.threshold:35;
+  const tiltFmt=value=>{
+    const cls=Math.abs(value)>=threshold?'att-critical-value':'att-normal-value';
+    return `<span class="${cls}">${value.toFixed(1)}°</span>`;
+  };
+
+  return `
+    <div class="att-detail-header">
+      <div>Стан</div>
+      <div>Roll</div>
+      <div>Pitch</div>
+      <div>Yaw</div>
+    </div>
+    <div class="att-detail-row">
+      <div class="${att.isCritical?'att-critical-value':'att-normal-value'}">
+        ${att.isCritical?'КРИТИЧНО':'НОРМА'}
+      </div>
+      <div>${tiltFmt(att.roll)}</div>
+      <div>${tiltFmt(att.pitch)}</div>
+      <div><span>${att.yaw.toFixed(1)}°</span></div>
+    </div>
+    <div class="esc-no-data">Червоний рядок: |Roll| або |Pitch| ≥ ${threshold.toFixed(0)}°. Yaw показується довідково і не є кутом нахилу.</div>
+  `;
+}
+
+function bindAiTimelineJumps(){
+  const list=document.getElementById('aiAlerts');
+  const timeline=document.getElementById('timelineContainer');
+  if(!list||!timeline)return;
+
+  list.querySelectorAll('li[data-jump-time]').forEach(li=>{
+    li.addEventListener('click',()=>{
+      const targetTime=li.dataset.jumpTime;
+      if(!targetTime)return;
+
+      const rows=[...timeline.querySelectorAll('.tl-item[data-time]')];
+      let target=rows.find(row=>row.dataset.time===targetTime);
+
+      // If an exact millisecond row is absent, select the nearest timeline row.
+      if(!target){
+        const parse=t=>{
+          const m=String(t).match(/^(-)?(\d+):(\d+(?:\.\d+)?)$/);
+          if(!m)return null;
+          const val=parseInt(m[2],10)*60+parseFloat(m[3]);
+          return m[1]?-val:val;
+        };
+        const wanted=parse(targetTime);
+        if(wanted!==null&&rows.length){
+          let best=null,bestDiff=Infinity;
+          rows.forEach(row=>{
+            const v=parse(row.dataset.time);
+            if(v===null)return;
+            const d=Math.abs(v-wanted);
+            if(d<bestDiff){bestDiff=d;best=row;}
+          });
+          target=best;
+        }
+      }
+
+      if(!target)return;
+      target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
+      target.classList.remove('timeline-jump-highlight');
+      void target.offsetWidth;
+      target.classList.add('timeline-jump-highlight');
+      setTimeout(()=>target.classList.remove('timeline-jump-highlight'),1800);
+    });
+  });
+}
+
+
+let timelineScrollbarSyncing=false;
+
+function setupTimelineFixedScrollbar(){
+  const timeline=document.getElementById('timelineContainer');
+  const fixedBar=document.getElementById('timelineScrollbarFixed');
+  const fixedInner=document.getElementById('timelineScrollbarInner');
+
+  if(!timeline||!fixedBar||!fixedInner)return;
+
+  fixedInner.style.width=timeline.scrollWidth+'px';
+
+  const needsScroll=timeline.scrollWidth>timeline.clientWidth;
+  fixedBar.style.display=needsScroll?'block':'none';
+
+  if(!needsScroll)return;
+
+  fixedBar.scrollLeft=timeline.scrollLeft;
+
+  if(!timeline.dataset.fixedScrollBound){
+    timeline.addEventListener('scroll',()=>{
+      if(timelineScrollbarSyncing)return;
+      timelineScrollbarSyncing=true;
+      fixedBar.scrollLeft=timeline.scrollLeft;
+      timelineScrollbarSyncing=false;
+    });
+    timeline.dataset.fixedScrollBound='1';
+  }
+
+  if(!fixedBar.dataset.timelineScrollBound){
+    fixedBar.addEventListener('scroll',()=>{
+      if(timelineScrollbarSyncing)return;
+      timelineScrollbarSyncing=true;
+      timeline.scrollLeft=fixedBar.scrollLeft;
+      timelineScrollbarSyncing=false;
+    });
+    fixedBar.dataset.timelineScrollBound='1';
+  }
+}
+
+window.addEventListener('resize',()=>{
+  setupTimelineFixedScrollbar();
+});
+
+
+function clampNumber(v,min,max){
+  return Math.max(min,Math.min(max,v));
+}
+
+function rcPwmValue(item,ch){
+  const rc=item&&item.rcChannels;
+  if(!rc)return null;
+  const v=rc['ch'+ch];
+  return typeof v==='number'&&Number.isFinite(v)?v:null;
+}
+
+function rcCenteredPercent(pwm){
+  if(typeof pwm!=='number'||!Number.isFinite(pwm))return null;
+  return clampNumber((pwm-1500)/5,-100,100);
+}
+
+function rcPercentText(pct){
+  if(typeof pct!=='number'||!Number.isFinite(pct))return '—';
+  const rounded=Math.round(pct);
+  return `${rounded>0?'+':''}${rounded}%`;
+}
+
+// V23.8: положення 3-позиційного перемикача за PWM.
+function tx16ThreePos(pwm){
+  if(typeof pwm!=='number'||!Number.isFinite(pwm))return null;
+  if(pwm<1300)return 1;
+  if(pwm<=1700)return 2;
+  return 3;
+}
+
+// V23.8: 2-позиційні SF/SH вважаємо активними при високому PWM.
+function tx16HighActive(pwm){
+  if(typeof pwm!=='number'||!Number.isFinite(pwm))return null;
+  if(pwm>=1700)return true;
+  if(pwm<=1300)return false;
+  return null;
+}
+
+function renderTx16Switches(item){
+  const sc=rcPwmValue(item,7);
+  const sd=rcPwmValue(item,8);
+  const sf=rcPwmValue(item,10);
+  const sh=rcPwmValue(item,6);
+  const fc=rcPwmValue(item,15);
+  const fs=rcPwmValue(item,11);
+  const scPos=tx16ThreePos(sc);
+  const sdPos=tx16ThreePos(sd);
+  const sfOn=tx16HighActive(sf);
+  const shOn=tx16HighActive(sh);
+  const fcText=tx16FcHuman(fc);
+  const fsText=tx16FsHuman(fs);
+  const pwm=v=>v===null?'—':`${Math.round(v)} us`;
+
+  const scText=scPos===1?'1 — SAFETY':scPos===2?'2 — ПРАВИЙ':scPos===3?'3 — ЛІВИЙ':'—';
+  const sdText=sdPos===1?'1 — SAFETY':sdPos===2?'2 — СЕРЕДНЄ':sdPos===3?'3 — EMERGENCY ДОЗВІЛ':'—';
+  const sfText=sfOn===true?'ON / АКТИВНИЙ':sfOn===false?'OFF':'ПЕРЕХІДНА ЗОНА';
+  const shText=shOn===true?'STOP АКТИВНИЙ':shOn===false?'НЕ НАТИСНУТО':'ПЕРЕХІДНА ЗОНА';
+
+  return `
+    <div class="switches-wrap">
+      <div class="switches-title">🎚 TX16S — SC / SD / SF / SH / FC / FS</div>
+      <div class="switches-grid">
+        <div class="switch-card">
+          <div class="switch-name">SC</div><div class="switch-channel">CH7 • ${pwm(sc)}</div>
+          <div class="switch-state ${scPos===2||scPos===3?'switch-active':'switch-safe'}"><b>${scText}</b></div>
+        </div>
+        <div class="switch-card">
+          <div class="switch-name">SD</div><div class="switch-channel">CH8 • ${pwm(sd)}</div>
+          <div class="switch-state ${sdPos===3?'switch-active':'switch-safe'}"><b>${sdText}</b></div>
+        </div>
+        <div class="switch-card">
+          <div class="switch-name">SF</div><div class="switch-channel">CH10 • ${pwm(sf)}</div>
+          <div class="switch-state ${sfOn===true?'switch-active':''}"><b>${sfText}</b></div>
+        </div>
+        <div class="switch-card">
+          <div class="switch-name">SH</div><div class="switch-channel">CH6 • ${pwm(sh)}</div>
+          <div class="switch-state ${shOn===true?'switch-stop':''}"><b>${shText}</b></div>
+        </div>
+        <div class="switch-card">
+          <div class="switch-name">FC</div><div class="switch-channel">CH15 • ${pwm(fc)}</div>
+          <div class="switch-state ${fcText==='ДО СЕБЕ'?'switch-active':'switch-safe'}"><b>${fcText}</b></div>
+        </div>
+        <div class="switch-card">
+          <div class="switch-name">FS</div><div class="switch-channel">CH11 • ${pwm(fs)}</div>
+          <div class="switch-state ${fsText==='АКТИВОВАНО'?'switch-active':'switch-safe'}"><b>${fsText}</b></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function stickDotPosition(horizontalPct,verticalPct){
+  const x=horizontalPct===null?50:50+clampNumber(horizontalPct,-100,100)*0.38;
+  const y=verticalPct===null?50:50-clampNumber(verticalPct,-100,100)*0.38;
+  return {x,y};
+}
+
+function renderTimelineSticks(item){
+  const roll=rcPwmValue(item,1);
+  const pitch=rcPwmValue(item,2);
+  const throttle=rcPwmValue(item,3);
+  const yaw=rcPwmValue(item,4);
+
+  const available=[roll,pitch,throttle,yaw].some(v=>v!==null);
+  if(!available){
+    return `<div class="sticks-empty">У цей момент у Timeline немає RC_CHANNELS для CH1–CH4.</div>`;
+  }
+
+  const rollPct=rcCenteredPercent(roll);
+  const pitchPct=rcCenteredPercent(pitch);
+  const throttlePct=rcCenteredPercent(throttle);
+  const yawPct=rcCenteredPercent(yaw);
+  const left=stickDotPosition(yawPct,throttlePct);
+  const right=stickDotPosition(rollPct,pitchPct);
+
+  const pwm=v=>v===null?'—':`${Math.round(v)} us`;
+
+  return `
+    <div class="sticks-head">
+      <span>🕹 ВІРТУАЛЬНІ СТІКИ TX16S</span>
+      <span class="sticks-time">${item.time||'—'} • ${item.mode||'—'}</span>
+    </div>
+    <div class="sticks-grid">
+      <div class="stick-card">
+        <div class="stick-title">Лівий стік — Yaw / Throttle</div>
+        <div class="stick-layout">
+          <div class="stick-pad">
+            <div class="stick-dot" style="left:${left.x.toFixed(1)}%;top:${left.y.toFixed(1)}%"></div>
+          </div>
+          <div class="stick-values">
+            <div><b>Yaw:</b> ${rcPercentText(yawPct)} &nbsp;(${pwm(yaw)})</div>
+            <div><b>Throttle:</b> ${rcPercentText(throttlePct)} &nbsp;(${pwm(throttle)})</div>
+          </div>
+        </div>
+      </div>
+      <div class="stick-card">
+        <div class="stick-title">Правий стік — Roll / Pitch</div>
+        <div class="stick-layout">
+          <div class="stick-pad">
+            <div class="stick-dot" style="left:${right.x.toFixed(1)}%;top:${right.y.toFixed(1)}%"></div>
+          </div>
+          <div class="stick-values">
+            <div><b>Roll:</b> ${rcPercentText(rollPct)} &nbsp;(${pwm(roll)})</div>
+            <div><b>Pitch:</b> ${rcPercentText(pitchPct)} &nbsp;(${pwm(pitch)})</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    ${renderTx16Switches(item)}
+    <div class="sticks-note">FC=CH15 та FS=CH11 додані лише як відображення RC_CHANNELS. Старий аналіз, AI-висновки, дальність, VTX, LINK LOSS та інші розрахунки не змінюються.</div>
+    <div class="sticks-note">Відсоток = відхилення від 1500 us до приблизних меж 1000/2000 us. Це команда пілота, а не фактичний кут або потужність моторів.</div>
+  `;
+}
+
+// V23.10: людські підписи станів, без потреби відкривати рядок.
+function tx16ThreePosHuman(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1)return 'ВІД СЕБЕ';
+  if(pos===2)return 'СЕРЕДИНА';
+  if(pos===3)return 'ДО СЕБЕ';
+  return '—';
+}
+
+function tx16TwoPosHuman(pwm, isMomentary=false){
+  const active=tx16HighActive(pwm);
+  if(active===null)return '—';
+  if(isMomentary)return active?'НАТИСНУТО':'НЕ НАТИСНУТО';
+  return active?'УВІМКНЕНО':'ВИМКНЕНО';
+}
+
+// TX16S UI-only extension.
+// Підтверджені тестом канали:
+// FC -> CH15
+// FS -> CH11
+// Ця логіка НЕ змінює backend, AI, Timeline-дані, дальність, VTX,
+// радіоаналіз або будь-які попередні розрахунки.
+function tx16FcHuman(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1)return 'ВІД СЕБЕ';
+  if(pos===2)return 'СЕРЕДИНА';
+  if(pos===3)return 'ДО СЕБЕ';
+  return '—';
+}
+
+function tx16FsHuman(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1)return 'АКТИВОВАНО';
+  if(pos===2)return 'ДЕАКТИВОВАНО';
+  if(pos===3)return 'АКТИВОВАНО';
+  return '—';
+}
+
+function tx16StateRaw(item){
+  return {
+    sc:rcPwmValue(item,7),
+    sd:rcPwmValue(item,8),
+    sf:rcPwmValue(item,10),
+    sh:rcPwmValue(item,6),
+    fc:rcPwmValue(item,15),
+    fs:rcPwmValue(item,11)
+  };
+}
+
+function tx16NormalizedState(item){
+  const r=tx16StateRaw(item);
+  return {
+    sc:tx16ThreePosHuman(r.sc),
+    sd:tx16ThreePosHuman(r.sd),
+    sf:tx16TwoPosHuman(r.sf,false),
+    sh:tx16TwoPosHuman(r.sh,true),
+    fc:tx16FcHuman(r.fc),
+    fs:tx16FsHuman(r.fs),
+    raw:r
+  };
+}
+
+function renderTx16TimelineSummary(item,prevItem){
+  const cur=tx16NormalizedState(item);
+  const prev=prevItem?tx16NormalizedState(prevItem):null;
+  const any=Object.values(cur.raw).some(v=>typeof v==='number');
+  if(!any)return '<span class="tx16-empty">Немає RC-даних</span>';
+
+  const changed=k=>Boolean(prev && prev[k]!=='—' && cur[k]!=='—' && prev[k]!==cur[k]);
+  const chip=(label,key,extraClass='')=>{
+    const isChanged=changed(key);
+    const before=isChanged?`${prev[key]} → `:'';
+    const cls=['tx16-chip',isChanged?'changed':'',extraClass].filter(Boolean).join(' ');
+    const pwm=cur.raw[key];
+    const title=`${label}: ${before}${cur[key]}${typeof pwm==='number'?` (${Math.round(pwm)} us)`:''}`;
+    return `<span class="${cls}" title="${title}"><b>${label}:</b> ${before}${cur[key]}</span>`;
+  };
+
+  const sfActive=cur.sf==='УВІМКНЕНО'?'active':'';
+  const shActive=cur.sh==='НАТИСНУТО'?'stop':'';
+  const fsActive=cur.fs==='АКТИВОВАНО'?'active':'';
+  return `<div class="tl-tx16s">${chip('SC','sc')}${chip('SD','sd')}${chip('SF','sf',sfActive)}${chip('SH','sh',shActive)}${chip('FC','fc')}${chip('FS','fs',fsActive)}</div>`;
+}
+
+
+// V23.31 / V24.11: окремо показує підтверджену NED-дальність і умовну повну дальність NED+DR; інші результати не змінюються.
+// Точні опорні значення з робочої таблиці:
+// 30%=7, 35%=11, 40%=17, 45%=26, 50%=40, 60%=49, 70%=60,
+// 80%=74, 90%=91, 95%=100, 96%=141, 97%=200, 98%=252, 99%=317, 100%=400.
+// Якщо Engine Load потрапляє між двома опорними значеннями — використовується
+// експоненційна інтерполяція між найближчими точками таблиці.
+function engineLoadToKeypoints(load){
+  if(typeof load!=='number'||!Number.isFinite(load)) return null;
+  const p=Math.max(0,Math.min(100,load));
+  const anchors=[
+    [0,1],
+    [30,7],[35,11],[40,17],[45,26],[50,40],
+    [60,49],[70,60],[80,74],[90,91],[95,100],
+    [96,141],[97,200],[98,252],[99,317],[100,400]
+  ];
+  for(let i=0;i<anchors.length;i++){
+    if(Math.abs(p-anchors[i][0])<1e-9) return anchors[i][1];
+  }
+  for(let i=0;i<anchors.length-1;i++){
+    const [x0,y0]=anchors[i], [x1,y1]=anchors[i+1];
+    if(p<x1){
+      const t=(p-x0)/(x1-x0||1);
+      const y=Math.exp(Math.log(y0)+(Math.log(y1)-Math.log(y0))*t);
+      return Math.max(1,Math.round(y));
+    }
+  }
+  return 400;
+}
+function renderEngineLoad(load){
+  if(typeof load!=='number'||!Number.isFinite(load)) return '—';
+  const kp=engineLoadToKeypoints(load);
+  return `<div>${load.toFixed(0)}%</div><div style="margin-top:3px;font-size:10px;color:#8fb0d6;white-space:nowrap;">${kp} точок</div>`;
+}
+
+function renderTimelineTable(items,containerId){
+  let html=`
+    <div class="tl-header">
+      <div>Час</div>
+      <div>Режим</div>
+      <div>Висота</div>
+      <div>Дальність</div>
+      <div>Азимут</div>
+      <div>VTX / VIDEO</div>
+      <div>Напруга</div>
+      <div>Струм</div>
+      <div>RSSI</div>
+      <div>dBm</div>
+      <div>ENGINE LOAD</div>
+      <div>Темп. FC / ESC</div>
+      <div>Запис / повідомлення</div>
+      <div>Аналіз</div>
+      <div>TX16S — SC / SD / SF / SH</div>
+      <div>Дія пілота</div>
+    </div>
+  `;
+
+  (items||[]).forEach((item,index)=>{
+    const freq=typeof item.videoFreq==='number'
+      ?item.videoFreq+' MHz'
+      :'—';
+
+    const probableSectorExit=Boolean(item.antennaSector?.probableSectorExit);
+    const azimuth=typeof item.azimuth==='number'
+      ?`${item.azimuth.toFixed(1)}°`
+      :'—';
+
+    const voltage=typeof item.volt==='number'
+      ?formatVoltageColored(item.volt)
+      :'—';
+
+    const current=typeof item.curr==='number'
+      ?formatCurrentColored(item.curr)
+      :'—';
+
+    // V23.6: Engine Load береться з backend поля engineLoad,
+    // яке відповідає MAVLink VFR_HUD.throttle (0..100 %).
+    const engineLoad=renderEngineLoad(item.engineLoad);
+
+    // V23.10: поточні перемикачі TX16S + видима стрілка, якщо стан змінився.
+    const tx16Summary=renderTx16TimelineSummary(item,index>0?items[index-1]:null);
+
+    const temp=typeof item.temp==='number'
+      ?item.temp.toFixed(1)+' °C'
+      :'—';
+
+    const rssi=typeof item.rssi==='number'
+      ?item.rssi+'%'
+      :'—';
+
+    const radioState=item.radioState||'UNKNOWN';
+    const radioStateText=item.radioStateText||'';
+    const radioClass={
+      NORMAL:'radio-normal',
+      VIDEO_DEGRADED:'radio-video-degraded',
+      VIDEO_LOST_TELEMETRY_OK:'radio-video-lost',
+      VERY_WEAK_TELEMETRY:'radio-very-weak',
+      LINK_LOST:'radio-link-lost'
+    }[radioState]||'';
+
+    const sectorTitle=probableSectorExit
+      ?'Тривалий -128 dBm + кут БПЛА поза розрахунковим сектором АС'
+      :radioStateText;
+
+    const dbm=typeof item.dbm==='number'
+      ?`<span class="${radioClass} ${probableSectorExit?'radio-loss-value':''}" title="${sectorTitle}">${item.dbm} dBm</span>`
+      :'—';
+
+    let rowClass='';
+    if(item.eventType==='VIDEO')rowClass='video-row';
+    if(item.eventType==='POTENTIAL_THRUST_LOSS')rowClass+=' rpm-critical-row';
+    if(item.eventType==='LAND_DESCENT_CONTROLLED')rowClass+=' land-controlled-row';
+    if(item.eventType==='LAND_DESCENT_ABNORMAL')rowClass+=' land-abnormal-row';
+    if(item.eventType==='ACCEL_CALIBRATION')rowClass+=' accel-cal-row';
+    if(item.eventType==='RADIO_CALIBRATION_START'||item.eventType==='RADIO_CALIBRATION_END')rowClass+=' radio-cal-row';
+    if(item.eventType==='COMMUNICATION_LOST')rowClass+=' communication-lost-row';
+    if(item.eventType==='COMMUNICATION_RESTORED')rowClass+=' communication-restored-row';
+    if(item.eventType==='FLIGHT_SESSION_START')rowClass+=' flight-start-row';
+    if(item.eventType==='FLIGHT_SESSION_END')rowClass+=' flight-end-row';
+    if(item.eventType==='FLIGHT_TAKEOFF')rowClass+=' flight-takeoff-row';
+    if(item.eventType==='FLIGHT_LANDING')rowClass+=' flight-landing-row';
+    if(item.eventType==='FLIGHT_SESSION_OPEN_AT_END')rowClass+=' flight-open-row';
+    if(item.isError&&item.eventType!=='SYSTEM')rowClass+=' error-row';
+    if(item.vibration?.isCritical)rowClass+=' vibration-critical-row';
+    if(item.attitude?.isCritical)rowClass+=' attitude-critical-row';
+    if(item.eventType==='RPM_DIAGONAL_CRITICAL')rowClass+=' rpm-critical-row';
+    if(radioState==='VIDEO_DEGRADED')rowClass+=' radio-degraded-row';
+    if(radioState==='VIDEO_LOST_TELEMETRY_OK'||radioState==='VERY_WEAK_TELEMETRY')rowClass+=' radio-video-lost-row';
+    if(radioState==='LINK_LOST')rowClass+=' radio-link-lost-row';
+    if(item.antennaSector?.probableSectorExit)rowClass+=' antenna-sector-row';
+
+    const systemStyle=item.isError
+      ?'color:var(--danger);font-weight:600;'
+      :'';
+
+    const escAvailable=Array.isArray(item.esc)&&item.esc.some(
+      esc=>esc&&(
+        typeof esc.temp==='number'||
+        typeof esc.rpm==='number'||
+        typeof esc.current==='number'
+      )
+    );
+
+    const escButton=escAvailable
+      ?`<button type="button" class="esc-toggle" data-target="esc-${index}">ESC ▾</button>`
+      :'';
+
+    const vibrationAvailable=item.vibration&&
+      typeof item.vibration.x==='number'&&
+      typeof item.vibration.y==='number'&&
+      typeof item.vibration.z==='number';
+
+    const vibButton=vibrationAvailable
+      ?`<button type="button" class="vib-toggle" data-target="vib-${index}">VIB ▾</button>`
+      :'';
+
+    const attitudeAvailable=item.attitude&&
+      typeof item.attitude.roll==='number'&&
+      typeof item.attitude.pitch==='number'&&
+      typeof item.attitude.yaw==='number';
+
+    const attButton=attitudeAvailable
+      ?`<button type="button" class="att-toggle" data-target="att-${index}">ATT ▾</button>`
+      :'';
+
+    html+=`
+      <div class="tl-item ${rowClass}" id="timeline-row-${index}" data-time="${item.time||''}">
+        <div class="tl-time">${item.time||'—'}</div>
+        <div class="tl-mode">${item.mode||'—'}</div>
+        <div class="tl-badge">${item.alt||'—'}</div>
+        <div class="tl-badge">${item.dist||'—'}</div>
+        <div class="tl-badge">${azimuth}</div>
+        <div class="tl-badge">${freq}</div>
+        <div class="tl-badge">${voltage}</div>
+        <div class="tl-badge">${current}</div>
+        <div class="tl-badge">${rssi}</div>
+        <div class="tl-badge">${dbm}</div>
+        <div class="tl-badge" title="Engine Load = MAVLink VFR_HUD.throttle">${engineLoad}</div>
+        <div class="tl-badge esc-cell">
+          <span>${temp}</span>
+          ${escButton}
+          ${vibButton}
+          ${attButton}
+        </div>
+        <div class="tl-system" style="${systemStyle}">
+          ${item.flightNumber?`<span class="flight-tag">Політ №${item.flightNumber}${item.takeoffEpisodeNumber?` / еп. ${item.takeoffEpisodeNumber}`:''}</span>`:''}
+          ${item.systemText||'—'}
+          ${typeof item.verticalSpeedDown==='number'&&item.mode==='LAND'?`<div class="esc-no-data">Vz↓: ${item.verticalSpeedDown.toFixed(2)} м/с</div>`:''}
+        </div>
+        <div class="tl-analysis">${item.analysisText?`<span class="analysis-msg">${item.analysisText}</span>`:''}</div>
+        <div>${tx16Summary}</div>
+        <div class="tl-pilot">${item.pilotText||'—'}</div>
+      </div>
+    `;
+
+    html+=`
+      <div class="sticks-detail" id="sticks-${index}">
+        <div class="sticks-detail-inner">
+          ${renderTimelineSticks(item)}
+        </div>
+      </div>
+    `;
+
+    if(escAvailable){
+      html+=`
+        <div class="esc-detail" id="esc-${index}">
+          <div class="esc-detail-inner">
+            ${renderEscDetail(item.esc,item.rpmAnalysis)}
+          </div>
+        </div>
+      `;
+    }
+
+    if(vibrationAvailable){
+      html+=`
+        <div class="vib-detail" id="vib-${index}">
+          <div class="vib-detail-inner">
+            ${renderVibrationDetail(item.vibration)}
+          </div>
+        </div>
+      `;
+    }
+
+    if(attitudeAvailable){
+      html+=`
+        <div class="att-detail" id="att-${index}">
+          <div class="att-detail-inner">
+            ${renderAttitudeDetail(item.attitude)}
+          </div>
+        </div>
+      `;
+    }
+  });
+
+  if(!items||items.length===0){
+    html+=`<div style="padding:20px;color:var(--text-muted);">Подій не зафіксовано</div>`;
+  }
+
+  const container=document.getElementById(containerId);
+  container.innerHTML=html;
+
+  setupTimelineFixedScrollbar();
+
+  // Клік по рядку Timeline відкриває/закриває стіки саме для цього моменту.
+  // Кнопки ESC/VIB/ATT працюють окремо і не тригерять стіки.
+  let openedSticksId=null;
+  container.querySelectorAll('.tl-item').forEach(row=>{
+    row.setAttribute('title','Натисніть, щоб показати/сховати стіки TX16S у цей момент');
+    row.addEventListener('click',event=>{
+      if(event.target.closest('button'))return;
+
+      const index=String(row.id||'').replace('timeline-row-','');
+      const targetId='sticks-'+index;
+      const detail=document.getElementById(targetId);
+      if(!detail)return;
+
+      const alreadyOpen=detail.classList.contains('open');
+
+      if(openedSticksId&&openedSticksId!==targetId){
+        const old=document.getElementById(openedSticksId);
+        if(old)old.classList.remove('open');
+        const oldIndex=openedSticksId.replace('sticks-','');
+        const oldRow=document.getElementById('timeline-row-'+oldIndex);
+        if(oldRow)oldRow.classList.remove('sticks-open-row');
+      }
+
+      if(alreadyOpen){
+        detail.classList.remove('open');
+        row.classList.remove('sticks-open-row');
+        openedSticksId=null;
+      }else{
+        detail.classList.add('open');
+        row.classList.add('sticks-open-row');
+        openedSticksId=targetId;
+      }
+
+      setupTimelineFixedScrollbar();
+    });
+  });
+
+  container.querySelectorAll('.esc-toggle').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const targetId=button.dataset.target;
+      const detail=document.getElementById(targetId);
+      if(!detail)return;
+
+      const open=detail.classList.toggle('open');
+      button.textContent=open?'ESC ▴':'ESC ▾';
+    });
+  });
+
+
+  container.querySelectorAll('.vib-toggle').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const targetId=button.dataset.target;
+      const detail=document.getElementById(targetId);
+      if(!detail)return;
+
+      const open=detail.classList.toggle('open');
+      button.textContent=open?'VIB ▴':'VIB ▾';
+    });
+  });
+
+  container.querySelectorAll('.att-toggle').forEach(button=>{
+    button.addEventListener('click',()=>{
+      const targetId=button.dataset.target;
+      const detail=document.getElementById(targetId);
+      if(!detail)return;
+
+      const open=detail.classList.toggle('open');
+      button.textContent=open?'ATT ▴':'ATT ▾';
+    });
+  });
+}
+</script>
+
+<script>
+(function(){
+  "use strict";
+
+  // =========================================================
+  // TLOG ANALYZER V23.17
+  // Map UX: bright route + drag-to-pan + mouse-wheel zoom + reset view.
+  // =========================================================
+  var STATE = {
+    data: null,
+    flights: [],
+    active: 0,
+    zoom: 1.0,
+    panN: 0.0,
+    panE: 0.0,
+    antennaMode: "AUTO",
+    manualAntennaAz: null,
+    selectedTimelineIndex: null,
+    view: null,
+    mapDimension: "2D",
+    view3d: {yaw:-42, pitch:28, zoom:1.0, panX:0, panY:0}
+  };
+
+  // Approximate calibration requested for this aircraft.
+  var SPEED_MODEL = {
+    LOITER: {
+      kmhPerDegree: 2.75,
+      maxKmh: 55.0,
+      maxTiltDeg: 20.0
+    },
+    ALTHOLD: {
+      kmhPerDegree: 110.0 / 30.0,
+      maxKmh: 110.0,
+      maxTiltDeg: 30.0
+    }
+  };
+
+  function isNum(v){
+    return typeof v === "number" && isFinite(v);
+  }
+
+  function normMode(mode){
+    return String(mode || "").toUpperCase().replace(/[\s_-]+/g, "");
+  }
+
+  function speedConfig(mode){
+    var m = normMode(mode);
+    if(m.indexOf("LOITER") >= 0) return SPEED_MODEL.LOITER;
+    if(m.indexOf("ALTHOLD") >= 0) return SPEED_MODEL.ALTHOLD;
+    return null;
+  }
+
+  function modeColor(mode){
+    // V23.15: яскравіші кольори, щоб маршрут не губився на темній карті.
+    var m = normMode(mode);
+    if(m.indexOf("LOITER") >= 0) return "#00f078";
+    if(m.indexOf("ALTHOLD") >= 0) return "#ff453a";
+    if(m.indexOf("LAND") >= 0) return "#ffd60a";
+    if(m.indexOf("RTL") >= 0) return "#d97706";
+    return "#cbd5e1";
+  }
+
+  function svgEl(name, attrs){
+    var el = document.createElementNS("http://www.w3.org/2000/svg", name);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function(k){
+      el.setAttribute(k, String(attrs[k]));
+    });
+    return el;
+  }
+
+  function parseTimeSeconds(text){
+    var s = String(text || "").trim();
+    var sign = 1;
+    if(s.charAt(0) === "-"){
+      sign = -1;
+      s = s.substring(1);
+    }
+    var p = s.split(":");
+    if(p.length !== 2) return null;
+    var mm = Number(p[0]);
+    var ss = Number(p[1]);
+    if(!isFinite(mm) || !isFinite(ss)) return null;
+    return sign * (mm * 60 + ss);
+  }
+
+  function getHeading(row){
+    // Current backend timeline calls aircraft heading "azimuth".
+    if(isNum(row.azimuth)) return row.azimuth;
+    if(row.attitude && isNum(row.attitude.yaw)) return row.attitude.yaw;
+    return null;
+  }
+
+  function getRollPitch(row){
+    if(!row.attitude) return null;
+    var roll = isNum(row.attitude.roll) ? row.attitude.roll : null;
+    var pitch = isNum(row.attitude.pitch) ? row.attitude.pitch : null;
+    if(roll === null || pitch === null) return null;
+    return {roll:roll, pitch:pitch};
+  }
+
+  function estimateVelocity(row){
+    var cfg = speedConfig(row.mode);
+    var rp = getRollPitch(row);
+    var hdg = getHeading(row);
+
+    if(!cfg || !rp || hdg === null) return null;
+
+    // ArduPilot/MAVLink convention:
+    // pitch < 0 approximately means nose-down / forward motion.
+    // roll > 0 approximately means right-side motion.
+    var forwardKmh = -rp.pitch * cfg.kmhPerDegree;
+    var rightKmh = rp.roll * cfg.kmhPerDegree;
+
+    var magnitude = Math.sqrt(
+      forwardKmh * forwardKmh +
+      rightKmh * rightKmh
+    );
+
+    // Limit to the approximate mode maximum.
+    if(magnitude > cfg.maxKmh && magnitude > 0){
+      var scale = cfg.maxKmh / magnitude;
+      forwardKmh *= scale;
+      rightKmh *= scale;
+      magnitude = cfg.maxKmh;
+    }
+
+    var yaw = hdg * Math.PI / 180;
+
+    // Body-forward/right -> world North/East.
+    var northKmh =
+      forwardKmh * Math.cos(yaw) -
+      rightKmh * Math.sin(yaw);
+
+    var eastKmh =
+      forwardKmh * Math.sin(yaw) +
+      rightKmh * Math.cos(yaw);
+
+    return {
+      northMps: northKmh / 3.6,
+      eastMps: eastKmh / 3.6,
+      speedKmh: magnitude
+    };
+  }
+
+  function splitFlights(data){
+    var timeline = Array.isArray(data && data.timeline)
+      ? data.timeline
+      : [];
+
+    var groups = {};
+
+    timeline.forEach(function(row, index){
+      if(!row || row.eventType !== "SNAPSHOT") return;
+
+      // The backend already marks ARM->DISARM sessions by flightNumber.
+      var fn = isNum(row.flightNumber)
+        ? row.flightNumber
+        : 1;
+
+      if(!groups[fn]) groups[fn] = [];
+
+      var copy = Object.assign(
+        {timelineIndex:index},
+        row
+      );
+
+      groups[fn].push(copy);
+    });
+
+    var numbers = Object.keys(groups)
+      .map(Number)
+      .sort(function(a,b){ return a-b; });
+
+    return numbers.map(function(fn){
+      return buildFlight(fn, groups[fn], data);
+    });
+  }
+
+  function buildFlight(number, rows, data){
+    rows.sort(function(a,b){
+      return (parseTimeSeconds(a.time) || 0) -
+             (parseTimeSeconds(b.time) || 0);
+    });
+
+    // -------------------------------------------------------
+    // NED ORIGIN
+    // Беремо НЕ вигаданий 0,0,0, а саме перший small initial pos NED,
+    // який backend знайшов у LOITER (наприклад 0,0,0 або -0.1,0.4,-0.8).
+    // На карті ця фактична телеметрична точка стає локальним 0,0.
+    // -------------------------------------------------------
+    var originN = 0.0;
+    var originE = 0.0;
+    var originD = 0.0;
+    var originAvailable = false;
+    var originText = "—";
+    var armDrLocalOrigin = false;
+
+    var ai = data && data.ai ? data.ai : null;
+    var rawOrigin = ai && Array.isArray(ai.primaryFalseNed)
+      ? ai.primaryFalseNed
+      : null;
+
+    if(
+      rawOrigin && rawOrigin.length >= 3 &&
+      isNum(Number(rawOrigin[0])) &&
+      isNum(Number(rawOrigin[1])) &&
+      isNum(Number(rawOrigin[2]))
+    ){
+      originN = Number(rawOrigin[0]);
+      originE = Number(rawOrigin[1]);
+      originD = Number(rawOrigin[2]);
+      originAvailable = true;
+      originText = originN.toFixed(1)+","+originE.toFixed(1)+","+originD.toFixed(1);
+    }
+
+    var points = [];
+    var n = 0.0;
+    var e = 0.0;
+
+    var lastTime = null;
+    var lastSource = null;
+    var started = false;
+
+    var nedCount = 0;
+    var drCount = 0;
+    var gapCount = 0;
+    var sourceChanges = 0;
+
+    function normalizedNed(row){
+      if(!isNum(row.nedNorth) || !isNum(row.nedEast)) return null;
+
+      // Якщо primary initial pos NED знайдений — віднімаємо саме його.
+      // Якщо backend його не знайшов, не вигадуємо зміщення: використовуємо raw NED.
+      return {
+        north: row.nedNorth - (originAvailable ? originN : 0.0),
+        east:  row.nedEast  - (originAvailable ? originE : 0.0)
+      };
+    }
+
+    rows.forEach(function(row){
+      var t = parseTimeSeconds(row.time);
+      if(t === null) return;
+
+      var m = normMode(row.mode);
+      var isLoiter = m.indexOf("LOITER") >= 0;
+      var isAltHold = m.indexOf("ALTHOLD") >= 0;
+      var ned = normalizedNed(row);
+
+      // -----------------------------------------------------
+      // 1) ПОЧАТОК ТРАЄКТОРІЇ — тільки з першої реальної NED-точки LOITER.
+      // До першого LOITER карту не тягнемо випадковими/старими координатами.
+      // -----------------------------------------------------
+      if(!started){
+        if(isLoiter && ned){
+          // Нормальний сценарій: перша фактична NED-точка в LOITER.
+          n = ned.north;
+          e = ned.east;
+          started = true;
+          lastTime = t;
+          lastSource = "NED";
+
+          points.push({
+            north:n,
+            east:e,
+            mode:row.mode,
+            time:row.time,
+            source:"NED",
+            speedKmh:null,
+            timelineIndex:row.timelineIndex
+          });
+
+          nedCount++;
+          return;
+        }
+
+        // V23.12 FALLBACK ДЛЯ ПОЛЬОТУ, ЯКИЙ ПОЧАВСЯ В ALT HOLD.
+        // У деяких TLOG немає жодного SNAPSHOT у LOITER, хоча в логові є
+        // первинний `initial pos NED`. Раніше карта чекала LOITER вічно і
+        // показувала NED:0 / DR:0. Якщо origin відомий, вважаємо його
+        // стартовою точкою 0,0 і далі будуємо ALT HOLD по Roll/Pitch/Heading+dt.
+        // V23.22: якщо політ починається в ALT HOLD і initial pos NED
+        // відсутній, все одно запускаємо локальний DR від ARM/першого snapshot.
+        // Це НЕ фактичний NED origin: точка 0,0 є лише локальною опорною
+        // точкою цієї польотної сесії для візуалізації розрахункового шляху.
+        if(isAltHold){
+          n = 0.0;
+          e = 0.0;
+          started = true;
+          lastTime = t;
+          lastSource = "DR";
+
+          // Позначаємо, що origin створений локально від старту сесії/ARM.
+          if(!originAvailable){
+            armDrLocalOrigin = true;
+            originText = "ARM / DR local 0,0";
+          }
+
+          points.push({
+            north:n,
+            east:e,
+            mode:row.mode,
+            time:row.time,
+            source:"DR",
+            speedKmh:0,
+            timelineIndex:row.timelineIndex
+          });
+
+          drCount++;
+          return;
+        }
+
+        // Останній резерв: якщо LOITER немає, але вже є реальна NED-точка
+        // в іншому режимі (RTL/LAND тощо), дозволяємо їй започаткувати карту.
+        if(ned && !isAltHold){
+          n = ned.north;
+          e = ned.east;
+          started = true;
+          lastTime = t;
+          lastSource = "NED";
+
+          points.push({
+            north:n,
+            east:e,
+            mode:row.mode,
+            time:row.time,
+            source:"NED",
+            speedKmh:null,
+            timelineIndex:row.timelineIndex
+          });
+          nedCount++;
+          return;
+        }
+
+        return;
+      }
+
+      // -----------------------------------------------------
+      // 2) ALT HOLD — NED ІГНОРУЄМО НАВІТЬ ЯКЩО ПОЛЕ Є.
+      // У snapshot backend може тягнути останнє curr_ned_* значення, тому воно
+      // виглядає "наявним", але фактично може бути замороженим/застарілим.
+      // Продовжуємо від ОСТАННЬОЇ точки за Roll/Pitch + Heading + dt.
+      // -----------------------------------------------------
+      if(isAltHold){
+        var velocity = estimateVelocity(row);
+
+        if(velocity && lastTime !== null){
+          var dt = t - lastTime;
+
+          if(dt > 0 && dt <= 3.0){
+            n += velocity.northMps * dt;
+            e += velocity.eastMps * dt;
+
+            if(lastSource && lastSource !== "DR"){
+              sourceChanges++;
+            }
+
+            points.push({
+              north:n,
+              east:e,
+              mode:row.mode,
+              time:row.time,
+              source:"DR",
+              speedKmh:velocity.speedKmh,
+              timelineIndex:row.timelineIndex
+            });
+
+            drCount++;
+            lastSource = "DR";
+          }else if(dt > 3.0){
+            gapCount++;
+            lastSource = "GAP";
+          }
+        }
+
+        // Критично: час оновлюємо навіть якщо конкретна DR-точка не побудувалась,
+        // щоб наступний dt не накопичував великий шматок часу.
+        lastTime = t;
+        return;
+      }
+
+      // -----------------------------------------------------
+      // 3) ПОВЕРНЕННЯ В LOITER (або інший режим з реальною NED позицією).
+      // Одразу повертаємось на фактичну LOCAL_POSITION_NED, нормалізовану
+      // відносно initial pos NED. DR більше не накопичується.
+      // -----------------------------------------------------
+      if(ned){
+        n = ned.north;
+        e = ned.east;
+
+        if(lastSource && lastSource !== "NED"){
+          sourceChanges++;
+        }
+
+        points.push({
+          north:n,
+          east:e,
+          mode:row.mode,
+          time:row.time,
+          source:"NED",
+          speedKmh:null,
+          timelineIndex:row.timelineIndex
+        });
+
+        nedCount++;
+        lastSource = "NED";
+        lastTime = t;
+        return;
+      }
+
+      // У режимах без NED і без нашої ALT HOLD моделі шлях не вигадуємо.
+      gapCount++;
+      lastSource = "GAP";
+      lastTime = t;
+    });
+
+    return {
+      number:number,
+      rows:rows,
+      points:points,
+      nedCount:nedCount,
+      drCount:drCount,
+      gapCount:gapCount,
+      sourceChanges:sourceChanges,
+      originAvailable:originAvailable,
+      originN:originN,
+      originE:originE,
+      originD:originD,
+      originText:originText,
+      armDrLocalOrigin:armDrLocalOrigin
+    };
+  }
+
+  function escHtml(value){
+    return String(value === null || value === undefined ? "—" : value)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+  }
+
+  function fmtNum(v,digits,suffix){
+    return isNum(v) ? Number(v).toFixed(digits)+(suffix||"") : "—";
+  }
+
+  // V23.2 — колір dBm у правій панелі карти за порогами радіолінії.
+  // >= -85 dBm = зелений; -86..-90 = жовтий; -91..-100 = помаранчевий; <= -101 = червоний.
+  function formatMapDbmColored(v){
+    if(!isNum(v)) return "—";
+    var n=Number(v);
+    var color="#22c55e";
+    if(n < -100) color="#ef4444";
+    else if(n <= -90) color="#f97316";
+    else if(n < -85) color="#f59e0b";
+    return "<span style='color:"+color+";font-weight:900;'>"+n.toFixed(0)+" dBm</span>";
+  }
+
+  // V23.2 — струм 80 A і вище підсвічується червоним.
+  // Нижче 80 A залишається штатним світлим кольором.
+  function formatMapCurrentColored(v){
+    if(!isNum(v)) return "—";
+    var n=Number(v);
+    var color=n>=80 ? "#ef4444" : "#e2e8f0";
+    var weight=n>=80 ? "900" : "700";
+    return "<span style='color:"+color+";font-weight:"+weight+";'>"+n.toFixed(1)+" A</span>";
+  }
+
+  function detailRow(label,value,accent){
+    return "<div style='display:grid;grid-template-columns:118px minmax(0,1fr);gap:8px;padding:5px 0;border-bottom:1px solid #1e293b;'>"+
+      "<div style='color:#64748b;font-size:11px;'>"+escHtml(label)+"</div>"+
+      "<div style='color:"+(accent||"#e2e8f0")+";font:11px/1.45 monospace;overflow-wrap:anywhere;'>"+value+"</div></div>";
+  }
+
+  function renderTelemetryDetails(row,point){
+    var panel=document.getElementById("mapTelemetryPanel");
+    if(!panel) return;
+    if(!row){ panel.innerHTML="<div style='color:#94a3b8'>Немає даних.</div>"; return; }
+    var mode=String(row.mode||"—"), c=modeColor(mode), html="";
+    html+="<div style='display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:10px;'>"+
+      "<div><div style='font-size:13px;font-weight:800;color:#f1f5f9;'>ТЕЛЕМЕТРІЯ ТОЧКИ</div><div style='font:12px monospace;color:#22c55e;margin-top:2px;'>"+escHtml(row.time||"—")+"</div></div>"+
+      "<div style='padding:3px 7px;border:1px solid "+c+";border-radius:5px;color:"+c+";font-size:11px;font-weight:800;'>"+escHtml(mode)+"</div></div>";
+    html+=detailRow("Джерело",escHtml(point&&point.source==="DR"?"DR — розрахунок":"NED — факт"),point&&point.source==="DR"?"#ef4444":"#22c55e");
+    html+=detailRow("N / E карти",fmtNum(point&&point.north,1," м")+" / "+fmtNum(point&&point.east,1," м"));
+    html+=detailRow("Raw NED",fmtNum(row.nedNorth,3,"")+", "+fmtNum(row.nedEast,3,"")+", "+fmtNum(row.nedDown,3,""));
+    html+=detailRow("Висота",escHtml(row.alt||"—"));
+    html+=detailRow("Дальність",escHtml(row.dist||"—"));
+    html+=detailRow("Heading",fmtNum(row.azimuth,1,"°"));
+    html+=detailRow("Pos. azimuth",fmtNum(row.positionAzimuth,1,"°"));
+    html+=detailRow("VTX",escHtml(isNum(row.videoFreq)?row.videoFreq+" MHz":"—")+" / "+escHtml(row.vtxBand||"—")+" / "+escHtml(row.vtxChannel||"—"));
+    // V23.2: струм >= 80 A червоний; dBm має окреме кольорове кодування.
+    html+=detailRow("Живлення",fmtNum(row.volt,2," V")+" / "+formatMapCurrentColored(row.curr));
+    html+=detailRow("Радіо",escHtml(isNum(row.rssi)?row.rssi+"%":"—")+" / "+formatMapDbmColored(row.dbm));
+    html+=detailRow("Стан радіо",escHtml(row.radioStateText||row.radioState||"—"));
+    html+=detailRow("FC temp",fmtNum(row.temp,1," °C"));
+    html+=detailRow("V speed",fmtNum(row.verticalSpeedDown,2," м/с ↓"));
+    if(row.attitude) html+=detailRow("Attitude","Roll "+fmtNum(row.attitude.roll,1,"°")+" • Pitch "+fmtNum(row.attitude.pitch,1,"°")+" • Yaw "+fmtNum(row.attitude.yaw,1,"°"));
+    if(row.vibration) html+=detailRow("Vibration","X "+fmtNum(row.vibration.x,1,"")+" • Y "+fmtNum(row.vibration.y,1,"")+" • Z "+fmtNum(row.vibration.z,1,""));
+    if(Array.isArray(row.esc)&&row.esc.length){
+      html+=detailRow("ESC",row.esc.map(function(x){ return "M"+escHtml(x.id)+": "+fmtNum(x.rpm,0," rpm")+", "+fmtNum(x.current,1," A")+", "+fmtNum(x.temp,0,"°C"); }).join("<br>"));
+    }
+    if(row.antennaSector){
+      var a=row.antennaSector;
+      html+=detailRow("Сектор АС","центр "+fmtNum(a.center,1,"°")+" • відхилення "+fmtNum(a.deviation,1,"°")+" • "+(a.outside?"ПОЗА СЕКТОРОМ":"в секторі"),a.outside?"#ef4444":"#22c55e");
+    }
+    var msgs=[];
+    if(row.systemText) msgs.push("<b style='color:#cbd5e1'>SYSTEM:</b> "+escHtml(row.systemText));
+    if(row.analysisText) msgs.push("<b style='color:#f59e0b'>ANALYSIS:</b> "+escHtml(row.analysisText));
+    if(row.pilotText) msgs.push("<b style='color:#60a5fa'>PILOT:</b> "+escHtml(row.pilotText));
+    if(msgs.length) html+="<div style='margin-top:10px;padding:10px;border:1px solid #334155;border-radius:6px;background:#0a0f15;font-size:11px;line-height:1.55;overflow-wrap:anywhere;'>"+msgs.join("<br>")+"</div>";
+    panel.innerHTML=html;
+  }
+
+  function renderTabs(){
+    var box = document.getElementById("mapDrTabs");
+    if(!box) return;
+
+    box.innerHTML = "";
+
+    STATE.flights.forEach(function(f, idx){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = "Політ " + f.number;
+
+      var active = idx === STATE.active;
+
+      b.style.cssText =
+        "border:1px solid "+(active?"#22c55e":"#334155")+";"+
+        "background:#0f141c;"+
+        "color:"+(active?"#22c55e":"#94a3b8")+";"+
+        "border-radius:5px;padding:5px 9px;cursor:pointer;"+
+        "font-size:11px;font-weight:700;";
+
+      b.addEventListener("click", function(){
+        STATE.active = idx;
+        STATE.zoom = 1.0;
+        STATE.panN = 0.0;
+        STATE.panE = 0.0;
+        STATE.selectedTimelineIndex = null;
+
+        // V23.22: при перемиканні між польотними сесіями очищаємо
+        // праву панель, щоб там не залишалась телеметрія іншого польоту.
+        var telemetryPanel = document.getElementById("mapTelemetryPanel");
+        if(telemetryPanel){
+          telemetryPanel.innerHTML =
+            "<div style='font-size:13px;font-weight:800;color:#f1f5f9;margin-bottom:8px;'>ТЕЛЕМЕТРІЯ ТОЧКИ</div>"+
+            "<div style='font-size:12px;color:#94a3b8;line-height:1.55;'>Натисни на точку траєкторії цього польоту. Тут відобразяться дані саме цієї сесії.</div>";
+          telemetryPanel.scrollTop = 0;
+        }
+
+        renderTabs();
+        draw();
+      });
+
+      box.appendChild(b);
+    });
+  }
+
+
+  // =======================================================
+  // V23.19 — ОЦІНКА ЙМОВІРНОГО НАПРЯМКУ АС ПО dBm
+  //
+  // Ідея:
+  // 1) беремо тільки валідні точки з позицією N/E та dBm;
+  // 2) ОСНОВНІ точки: -25 ... -80 dBm;
+  // 3) ПІДТВЕРДЖУЮЧІ точки: -81 ... -90 dBm;
+  // 4) -128 dBm та слабші/службові значення у напрямок НЕ включаємо;
+  // 5) ділимо точки на дистанційні зони, щоб близькі точки не
+  //    "переголосували" далекі лише через більшу кількість вимірів;
+  // 6) у кожній зоні беремо кілька найкращих dBm-точок;
+  // 7) для кожної зони рахуємо власний круговий середній азимут;
+  // 8) фінальний напрямок = кругове середнє ЦЕНТРІВ дистанційних зон;
+  // 9) чим більше різних дистанцій підтверджують один і той самий кут,
+  //    тим вища впевненість.
+  //
+  // Важливо: dBm сам по собі НЕ містить азимуту. Азимут береться з
+  // положення борта відносно AC/NED 0,0; Heading і форма NED-коридору
+  // в цей незалежний розрахунок не входять.
+  // =======================================================
+  function estimateDbmDirection(flight, data){
+    if(!flight || !Array.isArray(flight.points) || !data || !Array.isArray(data.timeline)){
+      return {available:false};
+    }
+
+    var all=[];
+    flight.points.forEach(function(p){
+      if(!isNum(p.north) || !isNum(p.east)) return;
+      var row=data.timeline[p.timelineIndex];
+      if(!row || !isNum(row.dbm)) return;
+
+      var dbm=Number(row.dbm);
+      // -128 = втрата/службовий мінімум. Позитивні значення теж невалідні.
+      if(dbm>=0 || dbm<=-128) return;
+
+      var dist=Math.sqrt(p.north*p.north+p.east*p.east);
+      // Дуже близькі точки малоінформативні по азимуту.
+      if(dist<50) return;
+
+      var az=(Math.atan2(p.east,p.north)*180/Math.PI+360)%360;
+      all.push({
+        az:az,
+        dbm:dbm,
+        dist:dist,
+        time:p.time,
+        timelineIndex:p.timelineIndex,
+        quality:(dbm>=-80 && dbm>=-25)?'PRIMARY':((dbm>=-90 && dbm<-80)?'SUPPORT':'IGNORE')
+      });
+    });
+
+    var usable=all.filter(function(x){return x.quality!=='IGNORE';});
+    if(usable.length<6){
+      return {available:false,sampleCount:usable.length,totalDbmPoints:all.length};
+    }
+
+    // Дистанційні зони. Верхня межа Infinity дозволяє працювати і на 10+ км.
+    var bands=[
+      {name:'50–500 м',min:50,max:500},
+      {name:'0.5–1.5 км',min:500,max:1500},
+      {name:'1.5–3 км',min:1500,max:3000},
+      {name:'3–5 км',min:3000,max:5000},
+      {name:'>5 км',min:5000,max:Infinity}
+    ];
+
+    function circularMean(points){
+      var sx=0,sy=0,sw=0;
+      points.forEach(function(x){
+        // Вага за якістю dBm. -25 має більшу вагу, -80 базову,
+        // підтримуючі -81..-90 ще меншу.
+        var w;
+        if(x.dbm>=-80){
+          w=1 + Math.max(0,Math.min(55,x.dbm+80))/55*2.0; // 1..3
+        }else{
+          w=0.45 + Math.max(0,Math.min(10,x.dbm+90))/10*0.35; // 0.45..0.8
+        }
+        var r=x.az*Math.PI/180;
+        sx+=Math.cos(r)*w;
+        sy+=Math.sin(r)*w;
+        sw+=w;
+      });
+      if(sw<=0)return null;
+      var center=(Math.atan2(sy,sx)*180/Math.PI+360)%360;
+      var concentration=Math.sqrt(sx*sx+sy*sy)/sw;
+      return {center:center,concentration:concentration,weight:sw};
+    }
+
+    var bandResults=[];
+    bands.forEach(function(band){
+      var inBand=usable.filter(function(x){return x.dist>=band.min && x.dist<band.max;});
+      if(!inBand.length)return;
+
+      // Спочатку беремо найкращі основні точки (-25..-80).
+      var primary=inBand.filter(function(x){return x.quality==='PRIMARY';})
+        .sort(function(a,b){return b.dbm-a.dbm;});
+      var support=inBand.filter(function(x){return x.quality==='SUPPORT';})
+        .sort(function(a,b){return b.dbm-a.dbm;});
+
+      var selected=primary.slice(0,4);
+      // Якщо в зоні мало основних точок — додаємо максимум 2 підтверджуючі.
+      if(selected.length<2){
+        selected=selected.concat(support.slice(0,Math.min(2,4-selected.length)));
+      }
+      // Якщо основних достатньо, одну дуже хорошу підтримуючу можна додати
+      // лише як слабке підтвердження, але не більше 5 точок загалом.
+      if(selected.length>=2 && selected.length<5 && support.length){
+        selected.push(support[0]);
+      }
+
+      if(!selected.length)return;
+      var mean=circularMean(selected);
+      if(!mean)return;
+
+      bandResults.push({
+        name:band.name,
+        center:mean.center,
+        concentration:mean.concentration,
+        selected:selected,
+        bestDbm:Math.max.apply(null,selected.map(function(x){return x.dbm;})),
+        minDist:Math.min.apply(null,selected.map(function(x){return x.dist;})),
+        maxDist:Math.max.apply(null,selected.map(function(x){return x.dist;}))
+      });
+    });
+
+    // Для осмисленого напрямку бажано мати хоча б 2 різні дистанційні зони.
+    if(bandResults.length<2){
+      return {
+        available:false,
+        sampleCount:usable.length,
+        totalDbmPoints:all.length,
+        bandCount:bandResults.length,
+        reason:'Потрібні хороші dBm-точки щонайменше на 2 різних дистанціях'
+      };
+    }
+
+    // Фінальний центр рахуємо по ЦЕНТРАХ зон, а не по всіх точках одразу.
+    // Так кожна дистанція має окремий голос.
+    var sx=0,sy=0,sw=0;
+    bandResults.forEach(function(b){
+      // Стабільна зона має більшу вагу, але жодна зона не домінує.
+      var w=0.65+0.35*Math.max(0,Math.min(1,b.concentration));
+      var r=b.center*Math.PI/180;
+      sx+=Math.cos(r)*w;
+      sy+=Math.sin(r)*w;
+      sw+=w;
+    });
+
+    if(sw<=0)return {available:false};
+    var center=(Math.atan2(sy,sx)*180/Math.PI+360)%360;
+    var concentration=Math.sqrt(sx*sx+sy*sy)/sw;
+
+    function angleDiff(a,b){
+      return Math.abs(((a-b+180)%360+360)%360-180);
+    }
+
+    var deviations=bandResults.map(function(b){return angleDiff(b.center,center);});
+    var maxDeviation=Math.max.apply(null,deviations);
+    var avgDeviation=deviations.reduce(function(s,v){return s+v;},0)/deviations.length;
+
+    // Впевненість: узгодженість кутів + кількість незалежних дистанцій.
+    var bandFactor=Math.min(1,bandResults.length/4);
+    var spreadFactor=Math.max(0,1-Math.min(1,avgDeviation/35));
+    var confidence=Math.round(Math.max(1,Math.min(98,
+      (0.55*concentration + 0.25*spreadFactor + 0.20*bandFactor)*100
+    )));
+
+    var selectedAll=[];
+    bandResults.forEach(function(b){selectedAll=selectedAll.concat(b.selected);});
+
+    return {
+      available:true,
+      center:center,
+      beamWidth:30,
+      confidence:confidence,
+      concentration:concentration,
+      sampleCount:usable.length,
+      selectedSampleCount:selectedAll.length,
+      topSampleCount:selectedAll.length, // compatibility with old UI
+      bandCount:bandResults.length,
+      avgDeviation:avgDeviation,
+      maxDeviation:maxDeviation,
+      bestDbm:selectedAll.length?Math.max.apply(null,selectedAll.map(function(x){return x.dbm;})):null,
+      method:'DBM_DISTANCE_BANDS',
+      bands:bandResults.map(function(b){
+        return {
+          name:b.name,
+          center:b.center,
+          concentration:b.concentration,
+          count:b.selected.length,
+          bestDbm:b.bestDbm,
+          minDist:b.minDist,
+          maxDist:b.maxDist
+        };
+      })
+    };
+  }
+
+
+  // =========================================================
+  // v1.3 — 3D LAZY MODULE
+  // 3D-код НЕ входить у головний HTML і завантажується тільки після кліку «3D».
+  // До цього моменту браузер не парсить і не виконує map3d.js.
+  // =========================================================
+  var MAP3D_MODULE_URL = "map3d.js";
+  var MAP3D_LOADING = null;
+
+  function loadMap3DModule(){
+    if(window.TLOG3D) return Promise.resolve(window.TLOG3D);
+    if(MAP3D_LOADING) return MAP3D_LOADING;
+    MAP3D_LOADING = new Promise(function(resolve,reject){
+      var s=document.createElement("script");
+      s.src=MAP3D_MODULE_URL+"?v=github-1";
+      s.async=true;
+      s.onload=function(){
+        if(window.TLOG3D) resolve(window.TLOG3D);
+        else reject(new Error("map3d.js завантажено, але модуль TLOG3D не знайдено"));
+      };
+      s.onerror=function(){reject(new Error("Не вдалося завантажити map3d.js"));};
+      document.head.appendChild(s);
+    }).catch(function(err){ MAP3D_LOADING=null; throw err; });
+    return MAP3D_LOADING;
+  }
+
+  function reset3dView(kind){
+    if(window.TLOG3D && typeof window.TLOG3D.resetView==="function"){
+      window.TLOG3D.resetView(STATE,kind||"ISO");
+      return;
+    }
+    kind=kind||"ISO";
+    if(kind==="TOP") STATE.view3d={yaw:0,pitch:89.5,zoom:1,panX:0,panY:0};
+    else if(kind==="NORTH") STATE.view3d={yaw:90,pitch:0,zoom:1,panX:0,panY:0};
+    else if(kind==="EAST") STATE.view3d={yaw:0,pitch:0,zoom:1,panX:0,panY:0};
+    else STATE.view3d={yaw:-42,pitch:28,zoom:1,panX:0,panY:0};
+  }
+
+  function refreshMapDimensionControls(){
+    var b2=document.getElementById("mapMode2D"), b3=document.getElementById("mapMode3D");
+    var presets=document.getElementById("map3dPresets");
+    var axis=document.getElementById("mapAxisHint");
+    var hint=document.getElementById("mapInteractionHint");
+    var is3=STATE.mapDimension==="3D";
+    if(b2){ b2.style.background=is3?"#0f141c":"rgba(34,197,94,.13)"; b2.style.color=is3?"#94a3b8":"#4ade80"; }
+    if(b3){ b3.style.background=is3?"rgba(59,130,246,.14)":"#0f141c"; b3.style.color=is3?"#93c5fd":"#94a3b8"; }
+    if(presets) presets.style.display=is3?"flex":"none";
+    if(axis) axis.textContent=is3?"3D: N / E / ALT":"N ↑ / E →";
+    if(hint) hint.textContent=is3
+      ? "🖱 drag = обертання • Shift+drag / права = зсув • wheel = zoom"
+      : "🖐 тягни карту • колесо = zoom • подвійний клік = reset";
+  }
+
+  function draw3DLazy(){
+    var svg=document.getElementById("mapDrSvg");
+    var info=document.getElementById("mapDrInfo");
+    if(!window.TLOG3D){
+      if(svg){
+        svg.innerHTML="";
+        var tx=svgEl("text",{x:500,y:300,"text-anchor":"middle",fill:"#93c5fd","font-size":16,"font-weight":800});
+        tx.textContent="Завантаження 3D-модуля…"; svg.appendChild(tx);
+      }
+      if(info) info.textContent="3D • lazy-load";
+      return;
+    }
+    window.TLOG3D.draw({
+      STATE:STATE,
+      svgEl:svgEl,
+      isNum:isNum,
+      modeColor:modeColor,
+      renderTelemetryDetails:renderTelemetryDetails,
+      redraw:draw
+    });
+  }
+
+  function draw(){
+    try{
+      refreshMapDimensionControls();
+      if(STATE.mapDimension==="3D"){ draw3DLazy(); return; }
+      var svg = document.getElementById("mapDrSvg");
+      var info = document.getElementById("mapDrInfo");
+      var sourceBox = document.getElementById("mapDrSource");
+      var zoomResetBtn = document.getElementById("mapZoomReset");
+      if(zoomResetBtn) zoomResetBtn.textContent=Math.round((Number(STATE.zoom)||1)*100)+"%";
+
+      if(!svg) return;
+      svg.innerHTML = "";
+
+      var flight = STATE.flights[STATE.active];
+
+      // V23.22: напрямок АС може бути відомий навіть коли для конкретної
+      // польотної сесії немає достатньо NED/DR-точок. Наприклад backend
+      // може дати резервну оцінку Heading + dBm. Тому antennaAnalysis
+      // читаємо ДО перевірки flight.points і, якщо маршруту немає,
+      // все одно малюємо сектор як компасну схему від AC/NED 0,0.
+      var antenna = STATE.data && STATE.data.ai && STATE.data.ai.antennaAnalysis
+        ? STATE.data.ai.antennaAnalysis
+        : null;
+
+      if(!flight || flight.points.length < 2){
+        if(info){
+          info.textContent = flight
+            ? "Політ "+flight.number+" • маршруту недостатньо, сектор АС показано окремо"
+            : "Польоти не знайдені";
+        }
+        if(sourceBox) sourceBox.textContent = "NED: 0 | DR: 0";
+
+        // Ручний режим також має працювати без траєкторії.
+        var fallbackAntenna = antenna && antenna.available && isNum(antenna.center)
+          ? Object.assign({}, antenna)
+          : null;
+        if(STATE.antennaMode === "MANUAL" && isNum(STATE.manualAntennaAz)){
+          var manualOnlyAz=((Number(STATE.manualAntennaAz)%360)+360)%360;
+          fallbackAntenna=Object.assign({}, fallbackAntenna||{}, {
+            available:true, center:manualOnlyAz, beamWidth:30, confidence:100,
+            method:"MANUAL", manual:true
+          });
+        }
+
+        if(fallbackAntenna && fallbackAntenna.available && isNum(fallbackAntenna.center)){
+          var cx=500, cy=420, radius=260;
+          var centerAz=((Number(fallbackAntenna.center)%360)+360)%360;
+          var beam=isNum(fallbackAntenna.beamWidth)?Number(fallbackAntenna.beamWidth):30;
+          var half=beam/2;
+
+          // Compass/grid rings.
+          [90,170,250].forEach(function(r){
+            svg.appendChild(svgEl("circle",{cx:cx,cy:cy,r:r,fill:"none",stroke:"#294154","stroke-width":1,opacity:0.55}));
+          });
+          [0,90,180,270].forEach(function(az){
+            var rad=az*Math.PI/180;
+            var x2=cx+radius*Math.sin(rad);
+            var y2=cy-radius*Math.cos(rad);
+            svg.appendChild(svgEl("line",{x1:cx,y1:cy,x2:x2,y2:y2,stroke:"#294154","stroke-width":1,opacity:0.55}));
+          });
+
+          // 30° сектор.
+          var pts=[cx+","+cy];
+          var steps=Math.max(16,Math.ceil(beam/2));
+          for(var i=0;i<=steps;i++){
+            var az=centerAz-half+(beam*i/steps);
+            var rr=az*Math.PI/180;
+            pts.push((cx+radius*Math.sin(rr))+","+(cy-radius*Math.cos(rr)));
+          }
+          svg.appendChild(svgEl("polygon",{points:pts.join(" "),fill:"rgba(34,197,94,.13)",stroke:"#22c55e","stroke-width":2}));
+
+          var cr=centerAz*Math.PI/180;
+          var ax=cx+radius*Math.sin(cr);
+          var ay=cy-radius*Math.cos(cr);
+          svg.appendChild(svgEl("line",{x1:cx,y1:cy,x2:ax,y2:ay,stroke:"#4ade80","stroke-width":3,"stroke-dasharray":"10 7"}));
+          svg.appendChild(svgEl("circle",{cx:cx,cy:cy,r:8,fill:"#090e14",stroke:"#22c55e","stroke-width":3}));
+
+          var label=svgEl("text",{x:ax,y:ay-12,"text-anchor":"middle",fill:"#4ade80","font-size":15,"font-weight":"700"});
+          label.textContent=(fallbackAntenna.manual?"РУЧНИЙ":"ЙМОВІРНИЙ")+" СЕКТОР АС "+beam.toFixed(0)+"° • "+centerAz.toFixed(1)+"°";
+          svg.appendChild(label);
+
+          var note=svgEl("text",{x:500,y:555,"text-anchor":"middle",fill:"#94a3b8","font-size":14});
+          note.textContent="Маршрут цієї сесії не відновлено; напрямок АС показаний окремо від траєкторії";
+          svg.appendChild(note);
+
+          if(sourceBox){
+            var methodRaw=String(fallbackAntenna.method||"—");
+            var methodText={
+              FLIGHT_PATH_NED:"NED-коридор польоту",
+              POSITION_NED:"NED + dBm",
+              HEADING_FALLBACK:"Heading + dBm (fallback)",
+              MANUAL:"ВРУЧНУ"
+            }[methodRaw]||methodRaw;
+            sourceBox.innerHTML="NED: 0 | DR: 0"+
+              "<br><span style='color:#4ade80'>АС: "+centerAz.toFixed(1)+"° / "+beam.toFixed(0)+"°</span>"+
+              "<br>Метод: "+methodText+
+              "<br>Впевненість: "+Number(fallbackAntenna.confidence||0).toFixed(0)+"%";
+          }
+        }else{
+          var noData = svgEl("text",{
+            x:500,y:300,"text-anchor":"middle",
+            fill:"#94a3b8","font-size":16
+          });
+          noData.textContent = "Немає координат або даних для розрахунку напрямку АС";
+          svg.appendChild(noData);
+        }
+        return;
+      }
+
+      var points = flight.points;
+
+      // V23.16: окрема незалежна оцінка АС по dBm + позиції точки.
+      // Вона НЕ замінює основний фізичний сектор — малюється окремо для порівняння.
+      var dbmAntenna = estimateDbmDirection(flight, STATE.data);
+
+      // -------------------------------------------------------
+      // V23.12: FRONTEND FALLBACK НАПРЯМКУ АС.
+      // Якщо backend не зміг визначити antennaAnalysis (наприклад політ
+      // весь час був у ALT HOLD і не мав придатного NED-коридору),
+      // оцінюємо напрямок АС з уже побудованої траєкторії DR/NED.
+      // Беремо тільки дальню половину точок: там азимут від 0,0 стабільніший.
+      // Це позначається як приблизна оцінка, а не як фактичний NED-вимір.
+      // -------------------------------------------------------
+      if(!antenna || !antenna.available || !isNum(antenna.center)){
+        var radial=[];
+        var maxR=0;
+        points.forEach(function(p){
+          if(isNum(p.north) && isNum(p.east)){
+            var r=Math.sqrt(p.north*p.north+p.east*p.east);
+            maxR=Math.max(maxR,r);
+          }
+        });
+
+        if(maxR >= 20){
+          points.forEach(function(p){
+            if(!isNum(p.north) || !isNum(p.east)) return;
+            var r=Math.sqrt(p.north*p.north+p.east*p.east);
+            if(r < Math.max(10,maxR*0.45)) return;
+            var az=(Math.atan2(p.east,p.north)*180/Math.PI+360)%360;
+            radial.push({az:az,w:Math.max(1,r)});
+          });
+        }
+
+        if(radial.length >= 3){
+          var sx=0,sy=0,sw=0;
+          radial.forEach(function(x){
+            var rr=x.az*Math.PI/180;
+            sx+=Math.cos(rr)*x.w;
+            sy+=Math.sin(rr)*x.w;
+            sw+=x.w;
+          });
+          if(sw>0 && (Math.abs(sx)>1e-9 || Math.abs(sy)>1e-9)){
+            var fallbackAz=(Math.atan2(sy,sx)*180/Math.PI+360)%360;
+            var concentration=Math.sqrt(sx*sx+sy*sy)/sw;
+            antenna={
+              available:true,
+              center:fallbackAz,
+              beamWidth:30,
+              method:"DR_TRAJECTORY_FALLBACK",
+              confidence:Math.round(Math.max(15,Math.min(70,concentration*70))),
+              frontendFallback:true,
+              sampleCount:radial.length
+            };
+          }
+        }
+      }
+
+      // -------------------------------------------------------
+      // AUTO SCALE: fit real trajectory instead of forcing 2 km.
+      // Always include NED origin (0,0), because it is the assumed
+      // -------------------------------------------------------
+      // V23.17: ручний азимут антени.
+      // AUTO лишає автоматичну оцінку (NED/dBm/fallback).
+      // MANUAL замінює лише центр сектора, не змінюючи траєкторію чи телеметрію.
+      // -------------------------------------------------------
+      var autoAntenna = antenna && antenna.available && isNum(antenna.center)
+        ? Object.assign({}, antenna)
+        : null;
+      if(STATE.antennaMode === "MANUAL" && isNum(STATE.manualAntennaAz)){
+        var manualAz=((Number(STATE.manualAntennaAz)%360)+360)%360;
+        antenna=Object.assign({}, antenna||{}, {
+          available:true,
+          center:manualAz,
+          beamWidth:isNum(antenna&&antenna.beamWidth)?Number(antenna.beamWidth):30,
+          confidence:100,
+          method:"MANUAL",
+          manual:true,
+          autoCenter:autoAntenna&&isNum(autoAntenna.center)?Number(autoAntenna.center):null
+        });
+      }
+
+      // antenna station for POSITION_NED antenna analysis.
+      // -------------------------------------------------------
+      var ns=[0], es=[0];
+      points.forEach(function(p){
+        if(isNum(p.north) && isNum(p.east)){
+          ns.push(p.north);
+          es.push(p.east);
+        }
+      });
+
+      var minN=Math.min.apply(null,ns);
+      var maxN=Math.max.apply(null,ns);
+      var minE=Math.min.apply(null,es);
+      var maxE=Math.max.apply(null,es);
+
+      var rawSpanN=Math.max(1,maxN-minN);
+      var rawSpanE=Math.max(1,maxE-minE);
+
+      // 12% world-space padding on every side. Minimum viewport is only
+      // 40 m so short flights remain readable instead of becoming a dot.
+      var padN=Math.max(20,rawSpanN*0.12);
+      var padE=Math.max(20,rawSpanE*0.12);
+      minN-=padN; maxN+=padN;
+      minE-=padE; maxE+=padE;
+
+      var autoCenterN=(minN+maxN)/2;
+      var autoCenterE=(minE+maxE)/2;
+      var baseSpanN=Math.max(40,maxN-minN);
+      var baseSpanE=Math.max(40,maxE-minE);
+      var zoom=Math.max(0.35,Math.min(20.0,Number(STATE.zoom)||1.0));
+      var spanN=baseSpanN/zoom;
+      var spanE=baseSpanE/zoom;
+
+      // V23.15: pan зберігається у світових NED-метрах.
+      // Перетягування карти змінює центр огляду, а не самі координати польоту.
+      var centerN=autoCenterN+(Number(STATE.panN)||0);
+      var centerE=autoCenterE+(Number(STATE.panE)||0);
+      minN=centerN-spanN/2; maxN=centerN+spanN/2;
+      minE=centerE-spanE/2; maxE=centerE+spanE/2;
+
+      // -------------------------------------------------------
+      // V23: ЄДИНИЙ ГЕОМЕТРИЧНИЙ МАСШТАБ N/E.
+      // ВАЖЛИВО: scale один і той самий для North та East.
+      // Тобто 1 м по N == 1 м по E у пікселях, тому азимути та сектор 30°
+      // не спотворюються прямокутною формою карти.
+      // plotCenterX < 500 навмисно зміщує саму карту трохи вліво.
+      // -------------------------------------------------------
+      var plotCenterX=445;
+      var scale=Math.min(840/spanE,520/spanN);
+
+      // Зберігаємо поточне перетворення для drag / wheel zoom.
+      STATE.view={
+        scale:scale, centerN:centerN, centerE:centerE,
+        autoCenterN:autoCenterN, autoCenterE:autoCenterE,
+        spanN:spanN, spanE:spanE, plotCenterX:plotCenterX
+      };
+
+      function project(n,e){
+        return {
+          x:plotCenterX+(e-centerE)*scale,
+          y:300-(n-centerN)*scale
+        };
+      }
+
+      function niceGridStep(visibleMeters){
+        var target=Math.max(5,visibleMeters/8);
+        var power=Math.pow(10,Math.floor(Math.log(target)/Math.LN10));
+        var q=target/power;
+        if(q<=1) return power;
+        if(q<=2) return 2*power;
+        if(q<=5) return 5*power;
+        return 10*power;
+      }
+
+      var visibleSpan=Math.max(spanN,spanE);
+      var gridStep=niceGridStep(visibleSpan);
+
+      // Grid
+      var grid=svgEl("g",{opacity:0.35});
+      var startE=Math.floor(minE/gridStep)*gridStep;
+      var endE=Math.ceil(maxE/gridStep)*gridStep;
+      for(var ge=startE; ge<=endE+gridStep*0.01; ge+=gridStep){
+        var ga=project(minN,ge);
+        var gb=project(maxN,ge);
+        grid.appendChild(svgEl("line",{
+          x1:ga.x,y1:ga.y,x2:gb.x,y2:gb.y,
+          stroke:"#294154","stroke-width":1
+        }));
+      }
+
+      var startN=Math.floor(minN/gridStep)*gridStep;
+      var endN=Math.ceil(maxN/gridStep)*gridStep;
+      for(var gn=startN; gn<=endN+gridStep*0.01; gn+=gridStep){
+        var gc=project(gn,minE);
+        var gd=project(gn,maxE);
+        grid.appendChild(svgEl("line",{
+          x1:gc.x,y1:gc.y,x2:gd.x,y2:gd.y,
+          stroke:"#294154","stroke-width":1
+        }));
+      }
+      svg.appendChild(grid);
+
+      // -------------------------------------------------------
+      // ANTENNA SECTOR.
+      // Backend center is NED position azimuth: 0°=North, 90°=East.
+      // Draw geometrically only when antenna analysis is available.
+      // -------------------------------------------------------
+      var origin=project(0,0);
+      var antennaDrawn=false;
+
+      if(antenna && antenna.available && isNum(antenna.center)){
+        var centerAz=((antenna.center%360)+360)%360;
+        var beam=isNum(antenna.beamWidth) ? antenna.beamWidth : 30;
+        var half=beam/2;
+
+        // V23.1 FIX:
+        // Сектор НЕ бере участі в auto-fit карти, але його довжина повинна
+        // візуально доходити приблизно до максимальної дальності польоту.
+        // Раніше radius рахувався через Math.min(spanN, spanE), тому для
+        // довгого вузького маршруту (наприклад 9.5 км майже по одній осі)
+        // сектор ставав смішно коротким.
+        var maxTrackRadius=0;
+        points.forEach(function(tp){
+          if(isNum(tp.north) && isNum(tp.east)){
+            maxTrackRadius=Math.max(
+              maxTrackRadius,
+              Math.sqrt(tp.north*tp.north + tp.east*tp.east)
+            );
+          }
+        });
+        var worldRadius=Math.max(25,maxTrackRadius*1.03);
+        var sectorPts=[];
+        var steps=Math.max(16,Math.ceil(beam/2));
+
+        sectorPts.push(origin.x+","+origin.y);
+        for(var si=0; si<=steps; si++){
+          var az=centerAz-half+(beam*si/steps);
+          var rad=az*Math.PI/180;
+          var n=worldRadius*Math.cos(rad);
+          var e=worldRadius*Math.sin(rad);
+          var pp=project(n,e);
+          sectorPts.push(pp.x+","+pp.y);
+        }
+
+        // V23: фізичний сектор АС показуємо зеленим напівпрозорим клином.
+        svg.appendChild(svgEl("polygon",{
+          points:sectorPts.join(" "),
+          fill:"rgba(34,197,94,0.13)",
+          stroke:"none"
+        }));
+
+        function antennaRay(az,stroke,width,dash){
+          var r=az*Math.PI/180;
+          var p=project(worldRadius*Math.cos(r),worldRadius*Math.sin(r));
+          var attrs={
+            x1:origin.x,y1:origin.y,x2:p.x,y2:p.y,
+            stroke:stroke,"stroke-width":width,"stroke-linecap":"round"
+          };
+          if(dash) attrs["stroke-dasharray"]=dash;
+          svg.appendChild(svgEl("line",attrs));
+          return p;
+        }
+
+        antennaRay(centerAz-half,"#22c55e",2.0,null);
+        antennaRay(centerAz+half,"#22c55e",2.0,null);
+        var axisEnd=antennaRay(centerAz,"#4ade80",2.3,"7 5");
+
+        var label=svgEl("text",{
+          x:axisEnd.x+8,
+          y:axisEnd.y-8,
+          fill:"#4ade80",
+          "font-size":12,
+          "font-weight":800
+        });
+        label.textContent=(antenna.manual?"РУЧНИЙ СЕКТОР АС ":(antenna.frontendFallback?"ЙМОВІРНИЙ СЕКТОР АС ":"ФІЗИЧНИЙ СЕКТОР АС "))+beam.toFixed(0)+"° • "+centerAz.toFixed(1)+"°";
+        svg.appendChild(label);
+        antennaDrawn=true;
+      }
+
+      // -------------------------------------------------------
+      // V23.16: СИНЯ ПУНКТИРНА ВІСЬ — НАПРЯМОК, ЯКИЙ ПІДТВЕРДЖУЄ dBm.
+      // Малюємо без заливки, щоб не плутати з основним зеленим сектором.
+      // -------------------------------------------------------
+      if(dbmAntenna && dbmAntenna.available && isNum(dbmAntenna.center)){
+        var dbmAz=Number(dbmAntenna.center);
+        var dbmBeam=Number(dbmAntenna.beamWidth||30);
+        var dbmHalf=dbmBeam/2;
+        var dbmRadius=Math.max(25,maxTrackRadius*0.92);
+
+        function dbmRay(az,stroke,width,dash){
+          var rr=az*Math.PI/180;
+          var pp=project(dbmRadius*Math.cos(rr),dbmRadius*Math.sin(rr));
+          var aa={
+            x1:origin.x,y1:origin.y,x2:pp.x,y2:pp.y,
+            stroke:stroke,'stroke-width':width,'stroke-linecap':'round',opacity:0.95
+          };
+          if(dash) aa['stroke-dasharray']=dash;
+          svg.appendChild(svgEl('line',aa));
+          return pp;
+        }
+
+        dbmRay(dbmAz-dbmHalf,'#38bdf8',1.4,'4 7');
+        dbmRay(dbmAz+dbmHalf,'#38bdf8',1.4,'4 7');
+        var dbmEnd=dbmRay(dbmAz,'#7dd3fc',2.6,'10 6');
+
+        var dbmLabel=svgEl('text',{
+          x:dbmEnd.x+8,y:dbmEnd.y+14,
+          fill:'#7dd3fc','font-size':11,'font-weight':800
+        });
+        dbmLabel.textContent='АС ПО dBm '+dbmAz.toFixed(1)+'° • '+Number(dbmAntenna.confidence||0).toFixed(0)+'%';
+        svg.appendChild(dbmLabel);
+      }
+
+      // NED origin / antenna station
+      svg.appendChild(svgEl("circle",{
+        cx:origin.x,cy:origin.y,r:7,
+        fill:"#090e14",
+        stroke:antennaDrawn?"#4ade80":"#22c55e",
+        "stroke-width":3
+      }));
+
+      var originText=svgEl("text",{
+        x:origin.x+10,y:origin.y+16,
+        fill:antennaDrawn?"#4ade80":"#22c55e",
+        "font-size":11,"font-weight":800
+      });
+      originText.textContent=antennaDrawn?"АС / NED 0,0":"NED 0,0";
+      svg.appendChild(originText);
+
+      // V23.5 — точки часу більше НЕ перекривають кольоровий маршрут.
+      // Порядок шарів тепер такий:
+      //   1) дуже дрібні допоміжні точки часу ПІД маршрутом;
+      //   2) кольоровий маршрут НАД ними;
+      //   3) прозорі клікабельні hit-зони;
+      //   4) лише вибрана точка — поверх усього.
+      // Завдяки цьому LOITER / ALT HOLD / LAND / RTL видно суцільною лінією.
+
+      var markerUnderGroup=svgEl("g",{});
+      var hitGroup=svgEl("g",{});
+      var selectedGroup=svgEl("g",{});
+      var visibleEvery=Math.max(1,Math.ceil(points.length/180));
+
+      points.forEach(function(p,pointIndex){
+        var pp=project(p.north,p.east);
+        if(pp.x < -10 || pp.x > 1010 || pp.y < -10 || pp.y > 610) return;
+
+        var selected=STATE.selectedTimelineIndex===p.timelineIndex;
+        var showVisible=pointIndex===0 || pointIndex===points.length-1 || (pointIndex%visibleEvery===0);
+
+        // Невибрані точки малюються ПІД лінією маршруту і дуже малими.
+        if(showVisible && !selected){
+          markerUnderGroup.appendChild(svgEl("circle",{
+            cx:pp.x,cy:pp.y,r:1.35,
+            fill:"#cbd5e1",
+            stroke:"none",
+            opacity:0.34,
+            "pointer-events":"none"
+          }));
+        }
+
+        // Кожна телеметрична мить залишається доступною для натискання,
+        // але ця зона повністю прозора і не закриває маршрут.
+        var hit=svgEl("circle",{
+          cx:pp.x,cy:pp.y,r:6.0,
+          fill:"transparent",
+          stroke:"none",
+          "data-map-hit":"1",
+          tabindex:0,role:"button",
+          "aria-label":"Телеметрія "+String(p.time||"")+" "+String(p.mode||"")
+        });
+        hit.style.cursor="pointer";
+
+        function selectPoint(){
+          STATE.selectedTimelineIndex=p.timelineIndex;
+          var row=STATE.data&&Array.isArray(STATE.data.timeline)
+            ? STATE.data.timeline[p.timelineIndex]
+            : null;
+          renderTelemetryDetails(row,p);
+          draw();
+        }
+
+        hit.addEventListener("click",function(ev){
+          ev.stopPropagation();
+          selectPoint();
+        });
+        hit.addEventListener("keydown",function(ev){
+          if(ev.key==="Enter"||ev.key===" "){
+            ev.preventDefault();
+            selectPoint();
+          }
+        });
+
+        var title=svgEl("title",{});
+        title.textContent=String(p.time||"—")+" • "+String(p.mode||"—")+
+          " • N "+Number(p.north).toFixed(1)+" / E "+Number(p.east).toFixed(1);
+        hit.appendChild(title);
+        hitGroup.appendChild(hit);
+
+        // Тільки вибрана точка показується поверх маршруту великим маркером.
+        if(selected){
+          selectedGroup.appendChild(svgEl("circle",{
+            cx:pp.x,cy:pp.y,r:6.2,
+            fill:"#f8fafc",
+            stroke:modeColor(p.mode),
+            "stroke-width":3.2,
+            opacity:0.96,
+            "pointer-events":"none"
+          }));
+        }
+      });
+
+      // Спочатку допоміжні точки — вони будуть накриті маршрутом.
+      svg.appendChild(markerUnderGroup);
+
+      // Кольоровий маршрут малюється ПОВЕРХ усіх невибраних точок.
+      for(var i=1;i<points.length;i++){
+        var a=points[i-1];
+        var b=points[i];
+
+        var jump=Math.sqrt(
+          Math.pow(b.north-a.north,2)+
+          Math.pow(b.east-a.east,2)
+        );
+
+        if(jump > 250){
+          var jp=project(b.north,b.east);
+          svg.appendChild(svgEl("circle",{
+            cx:jp.x,cy:jp.y,r:5,
+            fill:"#090e14",stroke:"#f59e0b","stroke-width":2.5
+          }));
+          continue;
+        }
+
+        var p0=project(a.north,a.east);
+        var p1=project(b.north,b.east);
+
+        // V23.15: маршрут малюємо яскравим подвійним шаром.
+        // Нижній шар — кольорове світіння, верхній — чітка лінія.
+        // Це прибирає ефект "майже чорної" траєкторії на секторі/сітці.
+        var routeColor=modeColor(b.mode);
+        var glowAttrs={
+          x1:p0.x,y1:p0.y,x2:p1.x,y2:p1.y,
+          stroke:routeColor,
+          "stroke-width":6.0,
+          "stroke-linecap":"round",
+          "stroke-linejoin":"round",
+          opacity:0.18,
+          "pointer-events":"none"
+        };
+
+        var attrs={
+          x1:p0.x,y1:p0.y,x2:p1.x,y2:p1.y,
+          stroke:routeColor,
+          "stroke-width":3.2,
+          "stroke-linecap":"round",
+          "stroke-linejoin":"round",
+          opacity:1,
+          "pointer-events":"none"
+        };
+
+        // ALT HOLD / DR — пунктир, інші режими — суцільна лінія.
+        if(b.source==="DR"){
+          glowAttrs["stroke-dasharray"]="15 9";
+          attrs["stroke-dasharray"]="15 9";
+        }
+
+        svg.appendChild(svgEl("line",glowAttrs));
+        svg.appendChild(svgEl("line",attrs));
+      }
+
+      // Прозорі hit-зони стоять над маршрутом, але візуально його не закривають.
+      svg.appendChild(hitGroup);
+
+      // Вибрана телеметрична точка — найверхніший шар.
+      svg.appendChild(selectedGroup);
+
+      // End marker
+      var end=project(points[points.length-1].north,points[points.length-1].east);
+      svg.appendChild(svgEl("circle",{
+        cx:end.x,cy:end.y,r:6,
+        fill:"#ef4444",stroke:"#f8fafc","stroke-width":1.5
+      }));
+
+      if(info){
+        info.textContent =
+          "Політ "+flight.number+
+          " • точок "+points.length+
+          " • сітка "+Math.round(gridStep)+" м"+
+          " • zoom "+Math.round((Number(STATE.zoom)||1)*100)+"%"+
+          " • drag: карта • wheel: zoom"+
+          (antennaDrawn?" • сектор АС "+Number(antenna.beamWidth||30).toFixed(0)+"°":"")+
+          (dbmAntenna&&dbmAntenna.available?" • dBm АС "+Number(dbmAntenna.center).toFixed(1)+"°":"");
+      }
+
+      if(sourceBox){
+        var antHtml="<br>АС: немає розрахунку";
+        if(antenna && antenna.available && isNum(antenna.center)){
+          // Пояснюємо користувачу, ЯК backend V23 визначив фізичну вісь АС.
+          var methodRaw=String(antenna.method||"—");
+          var methodText={
+            FLIGHT_PATH_NED:"NED-коридор польоту",
+            POSITION_NED:"NED + dBm",
+            HEADING_FALLBACK:"Heading fallback"
+          }[methodRaw]||methodRaw;
+
+          var pathDiag="";
+          if(methodRaw==="MANUAL") methodText="ВРУЧНУ";
+          if(methodRaw==="FLIGHT_PATH_NED" || isNum(antenna.flightPathCenter)){
+            pathDiag=
+              "<br>NED-коридор: "+(isNum(antenna.flightPathCenter)?Number(antenna.flightPathCenter).toFixed(1)+"°":"—")+
+              "<br>Стабільність напряму: "+(isNum(antenna.flightPathConcentration)?Math.round(Number(antenna.flightPathConcentration)*100)+"%":"—")+
+              "<br>Точок коридору: "+Number(antenna.flightPathSampleCount||0)+
+              "<br>Max дальність: "+Number(antenna.flightPathMaxDistance||0).toFixed(0)+" м";
+          }
+
+          antHtml=
+            "<br><span style='color:#4ade80'>АС: "+Number(antenna.center).toFixed(1)+"° / "+
+            Number(antenna.beamWidth||30).toFixed(0)+"°</span>"+
+            "<br>Метод: "+methodText+
+            "<br>Впевненість: "+Number(antenna.confidence||0).toFixed(0)+"%"+
+            (antenna.manual&&isNum(antenna.autoCenter)?"<br><span style='color:#93c5fd'>Автооціка: "+Number(antenna.autoCenter).toFixed(1)+"° • Δ "+Math.abs(((Number(antenna.center)-Number(antenna.autoCenter)+180)%360+360)%360-180).toFixed(1)+"°</span>":"")+
+            pathDiag;
+        }
+
+        // Окремий незалежний контроль по dBm.
+        if(dbmAntenna && dbmAntenna.available && isNum(dbmAntenna.center)){
+          var diffText='—';
+          var confirmText='';
+          if(antenna && antenna.available && isNum(antenna.center)){
+            var diff=Math.abs(((Number(dbmAntenna.center)-Number(antenna.center)+180)%360+360)%360-180);
+            diffText=diff.toFixed(1)+'°';
+            confirmText=diff<=10
+              ? "<br><span style='color:#22c55e'>dBm підтверджує основний напрямок</span>"
+              : (diff<=25
+                  ? "<br><span style='color:#f59e0b'>dBm частково розходиться з основним напрямком</span>"
+                  : "<br><span style='color:#ef4444'>dBm НЕ підтверджує основний напрямок</span>");
+          }
+          antHtml+=
+            "<br><span style='color:#7dd3fc'>АС по dBm: "+Number(dbmAntenna.center).toFixed(1)+"°</span>"+
+            "<br>dBm-впевненість: "+Number(dbmAntenna.confidence||0).toFixed(0)+"%"+
+            "<br>Дистанційних зон: "+Number(dbmAntenna.bandCount||0)+
+            "<br>Відібрано dBm-точок: "+Number(dbmAntenna.selectedSampleCount||dbmAntenna.topSampleCount||0)+
+            "<br>Середній розкид зон: "+(isNum(dbmAntenna.avgDeviation)?Number(dbmAntenna.avgDeviation).toFixed(1)+"°":"—")+
+            "<br>Різниця NED↔dBm: "+diffText+
+            (Array.isArray(dbmAntenna.bands)?dbmAntenna.bands.map(function(b){return "<br><span style='color:#94a3b8'>• "+b.name+": "+Number(b.center).toFixed(1)+"° / "+Number(b.bestDbm).toFixed(0)+" dBm / "+Number(b.count||0)+" т.</span>";}).join(""):"")+
+            confirmText;
+        }else{
+          antHtml+="<br><span style='color:#94a3b8'>АС по dBm: недостатньо даних</span>";
+        }
+
+        var originHtml = flight.originAvailable
+          ? "<br><span style='color:#22c55e'>NED origin: "+flight.originText+"</span>"+
+            "<br><span style='color:#94a3b8'>initial pos NED → карта 0,0</span>"
+          : (flight.armDrLocalOrigin
+              ? "<br><span style='color:#38bdf8'>Origin: ARM / DR local 0,0</span>"+
+                "<br><span style='color:#94a3b8'>Локальна опорна точка для ALT HOLD; це не фактичний NED origin.</span>"
+              : "<br><span style='color:#f59e0b'>NED origin: не знайдено</span>");
+
+        sourceBox.innerHTML =
+          "NED (факт): "+flight.nedCount+
+          "<br>ALT HOLD DR: "+flight.drCount+
+          "<br>Переходів NED↔DR: "+flight.sourceChanges+
+          originHtml+
+          "<br>LOITER: фактичний LOCAL_POSITION_NED"+
+          "<br>ALT HOLD: Roll/Pitch + Heading + dt"+
+          antHtml;
+      }
+
+    }catch(err){
+      console.error("2D NED/DR map error:",err);
+      var info=document.getElementById("mapDrInfo");
+      if(info){
+        info.textContent="Помилка карти: "+(err&&err.message?err.message:err);
+      }
+    }
+  }
+
+  function bindMapControls(){
+    var zin=document.getElementById("mapZoomIn");
+    var zout=document.getElementById("mapZoomOut");
+    var reset=document.getElementById("mapZoomReset");
+    var svg=document.getElementById("mapDrSvg");
+    var autoBtn=document.getElementById("antennaModeAuto");
+    var manualBtn=document.getElementById("antennaModeManual");
+    var manualBox=document.getElementById("antennaManualBox");
+    var manualInput=document.getElementById("antennaManualAz");
+    var manualApply=document.getElementById("antennaManualApply");
+    var modeStatus=document.getElementById("antennaModeStatus");
+    var mode2d=document.getElementById("mapMode2D");
+    var mode3d=document.getElementById("mapMode3D");
+    var top3d=document.getElementById("map3dTop");
+    var north3d=document.getElementById("map3dNorth");
+    var east3d=document.getElementById("map3dEast");
+    var reset3d=document.getElementById("map3dReset");
+
+    function refreshAntennaControls(){
+      var manual=STATE.antennaMode==="MANUAL";
+      if(manualBox) manualBox.style.display=manual?"flex":"none";
+      if(autoBtn){
+        autoBtn.style.borderColor=manual?"#334155":"#22c55e";
+        autoBtn.style.background=manual?"#0f141c":"rgba(34,197,94,.12)";
+        autoBtn.style.color=manual?"#94a3b8":"#4ade80";
+      }
+      if(manualBtn){
+        manualBtn.style.borderColor=manual?"#3b82f6":"#334155";
+        manualBtn.style.background=manual?"rgba(59,130,246,.12)":"#0f141c";
+        manualBtn.style.color=manual?"#93c5fd":"#94a3b8";
+      }
+      if(modeStatus) modeStatus.textContent=manual?(isNum(STATE.manualAntennaAz)?"MANUAL • "+Number(STATE.manualAntennaAz).toFixed(1)+"°":"MANUAL • введи азимут"):"AUTO";
+      if(manualInput && isNum(STATE.manualAntennaAz) && document.activeElement!==manualInput) manualInput.value=Number(STATE.manualAntennaAz).toFixed(1);
+    }
+
+    function applyManualAntenna(){
+      if(!manualInput) return;
+      var v=Number(String(manualInput.value).replace(',', '.'));
+      if(!Number.isFinite(v)) return;
+      v=((v%360)+360)%360;
+      STATE.manualAntennaAz=v;
+      STATE.antennaMode="MANUAL";
+      manualInput.value=v.toFixed(1);
+      refreshAntennaControls();
+      draw();
+    }
+
+    if(autoBtn&&!autoBtn.dataset.bound){
+      autoBtn.addEventListener("click",function(){ STATE.antennaMode="AUTO"; refreshAntennaControls(); draw(); });
+      autoBtn.dataset.bound="1";
+    }
+    if(manualBtn&&!manualBtn.dataset.bound){
+      manualBtn.addEventListener("click",function(){ STATE.antennaMode="MANUAL"; refreshAntennaControls(); draw(); if(manualInput) manualInput.focus(); });
+      manualBtn.dataset.bound="1";
+    }
+    if(manualApply&&!manualApply.dataset.bound){
+      manualApply.addEventListener("click",applyManualAntenna);
+      manualApply.dataset.bound="1";
+    }
+    if(manualInput&&!manualInput.dataset.bound){
+      manualInput.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); applyManualAntenna(); } });
+      manualInput.dataset.bound="1";
+    }
+    refreshAntennaControls();
+
+    function setDimension(dim){
+      STATE.mapDimension=dim==="3D"?"3D":"2D";
+      STATE.selectedTimelineIndex=null;
+      var panel=document.getElementById("mapTelemetryPanel");
+      if(panel) panel.innerHTML="<div style='font-size:13px;font-weight:800;color:#f1f5f9;margin-bottom:8px;'>ТЕЛЕМЕТРІЯ ТОЧКИ</div><div style='font-size:12px;color:#94a3b8;line-height:1.55;'>Натисни на точку траєкторії. Тут відобразяться всі дані та події на цей телеметричний час.</div>";
+      refreshMapDimensionControls(); draw();
+    }
+    if(mode2d&&!mode2d.dataset.bound){mode2d.addEventListener("click",function(){setDimension("2D");});mode2d.dataset.bound="1";}
+    if(mode3d&&!mode3d.dataset.bound){mode3d.addEventListener("click",function(){
+      if(!STATE.view3d)reset3dView("ISO");
+      mode3d.disabled=true;
+      var prevText=mode3d.textContent; mode3d.textContent="3D…";
+      loadMap3DModule().then(function(){
+        setDimension("3D");
+      }).catch(function(err){
+        console.error("3D load error",err);
+        var msg=(err&&err.message?err.message:String(err||"невідома помилка"));
+        var info=document.getElementById("mapDrInfo");
+        if(info) info.textContent="3D недоступний: "+msg;
+        var svg=document.getElementById("mapDrSvg");
+        if(svg){
+          svg.innerHTML="";
+          var tx=svgEl("text",{x:500,y:285,"text-anchor":"middle",fill:"#fca5a5","font-size":15,"font-weight":800});
+          tx.textContent="3D не завантажився"; svg.appendChild(tx);
+          var tx2=svgEl("text",{x:500,y:315,"text-anchor":"middle",fill:"#94a3b8","font-size":12});
+          tx2.textContent=msg; svg.appendChild(tx2);
+        }
+        STATE.mapDimension="2D"; refreshMapDimensionControls();
+      }).finally(function(){mode3d.disabled=false;mode3d.textContent=prevText;});
+    });mode3d.dataset.bound="1";}
+    [[top3d,"TOP"],[north3d,"NORTH"],[east3d,"EAST"],[reset3d,"ISO"]].forEach(function(x){if(x[0]&&!x[0].dataset.bound){x[0].addEventListener("click",function(){reset3dView(x[1]);draw();});x[0].dataset.bound="1";}});
+    refreshMapDimensionControls();
+
+    function setZoom(nextZoom){
+      if(STATE.mapDimension==="3D"){
+        STATE.view3d=STATE.view3d||{};
+        STATE.view3d.zoom=Math.max(0.25,Math.min(12,Number(nextZoom)||1));
+      }else{
+        STATE.zoom=Math.max(0.35,Math.min(20,Number(nextZoom)||1));
+      }
+      draw();
+    }
+
+    if(zin&&!zin.dataset.bound){
+      zin.addEventListener("click",function(){ setZoom((STATE.mapDimension==="3D"?(STATE.view3d&&STATE.view3d.zoom||1):STATE.zoom)*1.35); });
+      zin.dataset.bound="1";
+    }
+    if(zout&&!zout.dataset.bound){
+      zout.addEventListener("click",function(){ setZoom((STATE.mapDimension==="3D"?(STATE.view3d&&STATE.view3d.zoom||1):STATE.zoom)/1.35); });
+      zout.dataset.bound="1";
+    }
+    if(reset&&!reset.dataset.bound){
+      reset.addEventListener("click",function(){
+        if(STATE.mapDimension==="3D") reset3dView("ISO");
+        else {STATE.zoom=1;STATE.panN=0;STATE.panE=0;}
+        draw();
+      });
+      reset.dataset.bound="1";
+    }
+
+    if(svg&&!svg.dataset.mapInteractionBound){
+      svg.style.cursor="grab";
+      svg.style.touchAction="none";
+
+      var dragging=false;
+      var lastX=0,lastY=0;
+      var moved=false;
+      var dragKind="PAN";
+
+      // Колесо миші / тачпад: zoom без прокручування сторінки над картою.
+      svg.addEventListener("wheel",function(ev){
+        ev.preventDefault();
+        var factor=ev.deltaY<0?1.18:(1/1.18);
+        var currentZoom=STATE.mapDimension==="3D"?(STATE.view3d&&STATE.view3d.zoom||1):STATE.zoom;
+        setZoom(currentZoom*factor);
+      },{passive:false});
+
+      // Drag-to-pan. Починаємо перетягування тільки не на телеметричній hit-точці.
+      svg.addEventListener("pointerdown",function(ev){
+        var target=ev.target;
+        if(target && target.getAttribute && target.getAttribute("data-map-hit")==="1") return;
+        if(STATE.mapDimension==="3D"){
+          if(ev.button!==undefined && ev.button!==0 && ev.button!==2) return;
+          dragKind=(ev.shiftKey||ev.button===2)?"PAN3D":"ORBIT3D";
+        }else{
+          if(ev.button!==undefined && ev.button!==0) return;
+          dragKind="PAN";
+        }
+        dragging=true;
+        moved=false;
+        lastX=ev.clientX;
+        lastY=ev.clientY;
+        svg.setPointerCapture(ev.pointerId);
+        svg.style.cursor="grabbing";
+      });
+
+      svg.addEventListener("pointermove",function(ev){
+        if(!dragging) return;
+        var dx=ev.clientX-lastX;
+        var dy=ev.clientY-lastY;
+        if(Math.abs(dx)+Math.abs(dy)<0.5) return;
+        moved=true;lastX=ev.clientX;lastY=ev.clientY;
+        var rect=svg.getBoundingClientRect();
+        var svgDx=dx*(1000/Math.max(1,rect.width));
+        var svgDy=dy*(600/Math.max(1,rect.height));
+        if(STATE.mapDimension==="3D"){
+          STATE.view3d=STATE.view3d||{yaw:-42,pitch:28,zoom:1,panX:0,panY:0};
+          if(dragKind==="ORBIT3D"){
+            STATE.view3d.yaw=(Number(STATE.view3d.yaw)||0)+svgDx*0.22;
+            STATE.view3d.pitch=Math.max(-85,Math.min(89.5,(Number(STATE.view3d.pitch)||0)-svgDy*0.20));
+          }else{
+            STATE.view3d.panX=(Number(STATE.view3d.panX)||0)+svgDx;
+            STATE.view3d.panY=(Number(STATE.view3d.panY)||0)+svgDy;
+          }
+          draw();return;
+        }
+        if(!STATE.view || !STATE.view.scale) return;
+        var scale=STATE.view.scale;
+        STATE.panE-=svgDx/scale;
+        STATE.panN+=svgDy/scale;
+        draw();
+      });
+
+      function stopDrag(ev){
+        if(!dragging) return;
+        dragging=false;
+        try{ svg.releasePointerCapture(ev.pointerId); }catch(_e){}
+        svg.style.cursor="grab";
+      }
+      svg.addEventListener("contextmenu",function(ev){if(STATE.mapDimension==="3D")ev.preventDefault();});
+      svg.addEventListener("pointerup",stopDrag);
+      svg.addEventListener("pointercancel",stopDrag);
+      svg.addEventListener("lostpointercapture",function(){ dragging=false; svg.style.cursor="grab"; });
+
+      // Подвійний клік — швидко повернути auto-fit.
+      svg.addEventListener("dblclick",function(ev){
+        if(ev.target && ev.target.getAttribute && ev.target.getAttribute("data-map-hit")==="1") return;
+        if(STATE.mapDimension==="3D") reset3dView("ISO");
+        else {STATE.zoom=1;STATE.panN=0;STATE.panE=0;}
+        draw();
+      });
+
+      svg.dataset.mapInteractionBound="1";
+    }
+  }
+
+  // V23.31 / V24.11 — UI-only логіка дальності.
+  // Вона НЕ змінює data.flight.maxDistance, Timeline, AI-висновки, карту,
+  // сектор АС або будь-які інші результати аналізу.
+  //
+  // Правила:
+  // 1) Якщо маршрут має тільки надійні NED-точки — показуємо фактичну дальність.
+  // 2) Якщо маршрут тільки ALT_HOLD/DR — показуємо умовну DR-дальність.
+  // 3) Якщо політ змішаний NED + DR — основним числом показуємо умовну повну
+  //    дальність за комбінованою траєкторією, а нижче окремо — підтверджену NED.
+  function applyDrDistanceFallback(data, flights){
+    try{
+      var title=document.getElementById("maxDistanceTitle");
+      var value=document.getElementById("maxDistanceValue");
+      var desc=document.getElementById("maxDistanceDesc");
+      if(!title || !value || !desc) return;
+
+      var confirmedNedMax=0;
+      var hybridMax=0;
+      var nedPointCount=0;
+      var drPointCount=0;
+
+      (Array.isArray(flights)?flights:[]).forEach(function(f){
+        if(!f || !Array.isArray(f.points)) return;
+        f.points.forEach(function(p){
+          if(!p || !isNum(p.north) || !isNum(p.east)) return;
+          var r=Math.sqrt(p.north*p.north+p.east*p.east);
+          if(!Number.isFinite(r)) return;
+
+          hybridMax=Math.max(hybridMax,r);
+
+          if(p.source==="NED"){
+            confirmedNedMax=Math.max(confirmedNedMax,r);
+            nedPointCount++;
+          }else if(p.source==="DR"){
+            drPointCount++;
+          }
+        });
+      });
+
+      var backendFactual=Number(data && data.flight ? data.flight.maxDistance : NaN);
+
+      // Тільки фактична координатна траєкторія — нічого не змінюємо.
+      if(nedPointCount>=2 && drPointCount===0){
+        var factual = confirmedNedMax>0.5 ? confirmedNedMax : backendFactual;
+        title.textContent="Макс. дальність";
+        value.textContent=(Number.isFinite(factual) && factual>0.5)
+          ? (Math.round(factual*10)/10)+" м"
+          : "—";
+        desc.textContent=(Number.isFinite(factual) && factual>0.5)
+          ? "Фактична координатна дальність"
+          : "Координатна дальність не підтверджена";
+        return;
+      }
+
+      // Чистий ALT_HOLD / DR без підтвердженої NED-позиції.
+      if(drPointCount>=2 && nedPointCount===0 && hybridMax>=1){
+        title.textContent="Макс. умовна дальність";
+        value.textContent="≈ "+Math.round(hybridMax)+" м";
+        desc.textContent="Умовна оцінка: DR (ALT_HOLD). В одну сторону від стартової точки.";
+        return;
+      }
+
+      // Змішаний політ: фактичні NED + розрахункові DR-відрізки.
+      if(nedPointCount>=1 && drPointCount>=1 && hybridMax>=1){
+        title.textContent="Макс. дальність";
+        value.textContent="≈ "+Math.round(hybridMax)+" м";
+        var confirmedText = confirmedNedMax>=1
+          ? Math.round(confirmedNedMax)+" м"
+          : "не підтверджена";
+        desc.innerHTML="Комбінована оцінка: NED + DR • Підтверджена NED: <b>"+confirmedText+"</b>";
+        return;
+      }
+
+      // Резерв: якщо UI-точок замало, але backend має валідне фактичне число.
+      if(Number.isFinite(backendFactual) && backendFactual>0.5){
+        title.textContent="Макс. дальність";
+        value.textContent=(Math.round(backendFactual*10)/10)+" м";
+        desc.textContent="Фактична координатна дальність";
+      }else{
+        title.textContent="Макс. дальність";
+        value.textContent="—";
+        desc.textContent="Немає достатніх координат або DR-даних";
+      }
+    }catch(err){
+      console.warn("Distance display fallback error:",err);
+    }
+  }
+
+  function renderMap(data){
+    STATE.data=data;
+    STATE.flights=splitFlights(data);
+    applyDrDistanceFallback(data, STATE.flights);
+    STATE.active=0;
+    STATE.zoom=1.0;
+    STATE.panN=0.0;
+    STATE.panE=0.0;
+    STATE.antennaMode="AUTO";
+    STATE.manualAntennaAz=null;
+    STATE.selectedTimelineIndex=null;
+    STATE.mapDimension="2D";
+    reset3dView("ISO");
+
+    renderTabs();
+    bindMapControls();
+    draw();
+  }
+
+  // The original stable renderer remains untouched.
+  if(typeof window.renderResults==="function"){
+    var stableRenderResults=window.renderResults;
+
+    window.renderResults=function(data){
+      stableRenderResults(data);
+      renderMap(data);
+    };
+  }
+
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   V23.14 — FLOATING HEADER FOR TIMELINE
+   ------------------------------------------------------------
+   Why this exists:
+   overflow-x:auto is required for the wide Timeline. In browsers,
+   that overflow container can prevent position:sticky from staying
+   attached to the browser viewport during long vertical page scrolls.
+
+   Solution:
+   1. Clone the real .tl-header.
+   2. Show the clone only while Timeline is passing under the top edge.
+   3. Keep its horizontal offset synchronized with Timeline scrollLeft.
+   4. Hide it when Timeline itself is no longer under the viewport top.
+   ============================================================ */
+(function setupFloatingTimelineHeader(){
+  'use strict';
+
+  var timeline = document.getElementById('timelineContainer');
+  if(!timeline) return;
+
+  var floating = document.createElement('div');
+  floating.className = 'timeline-floating-header';
+  floating.setAttribute('aria-hidden','true');
+  document.body.appendChild(floating);
+
+  var clone = null;
+
+  function ensureClone(){
+    var realHeader = timeline.querySelector('.tl-header');
+    if(!realHeader){
+      floating.style.display='none';
+      clone=null;
+      floating.innerHTML='';
+      return null;
+    }
+
+    // Re-clone if Timeline was rendered again after a new TLOG analysis.
+    var signature = realHeader.textContent;
+    if(!clone || floating.dataset.headerSignature !== signature){
+      floating.innerHTML='';
+      clone = realHeader.cloneNode(true);
+      clone.removeAttribute('id');
+      floating.appendChild(clone);
+      floating.dataset.headerSignature = signature;
+    }
+    return realHeader;
+  }
+
+  function updateFloatingHeader(){
+    var realHeader = ensureClone();
+    if(!realHeader || !clone) return;
+
+    var timelineRect = timeline.getBoundingClientRect();
+    var headerHeight = realHeader.getBoundingClientRect().height || 34;
+
+    // Show only after the original header has gone above the viewport,
+    // and only until the bottom of Timeline reaches the floating header.
+    var shouldShow = timelineRect.top < 0 && timelineRect.bottom > headerHeight;
+
+    if(!shouldShow){
+      floating.style.display='none';
+      return;
+    }
+
+    floating.style.display='block';
+    floating.style.left = Math.max(0,timelineRect.left) + 'px';
+    floating.style.width = Math.max(0,timelineRect.width) + 'px';
+    floating.style.height = headerHeight + 'px';
+
+    // The clone has the full Timeline width; move it left exactly as much
+    // as the user has horizontally scrolled the original Timeline.
+    clone.style.width = timeline.scrollWidth + 'px';
+    clone.style.transform = 'translateX(' + (-timeline.scrollLeft) + 'px)';
+  }
+
+  window.addEventListener('scroll', updateFloatingHeader, {passive:true});
+  window.addEventListener('resize', updateFloatingHeader);
+  timeline.addEventListener('scroll', updateFloatingHeader, {passive:true});
+
+  // renderResults() replaces Timeline contents after analysis. Observe that
+  // change so the floating header immediately follows the newly rendered one.
+  if(typeof MutationObserver !== 'undefined'){
+    var observer = new MutationObserver(function(){
+      floating.dataset.headerSignature='';
+      clone=null;
+      updateFloatingHeader();
+    });
+    observer.observe(timeline,{childList:true,subtree:true});
+  }
+
+  updateFloatingHeader();
+})();
+
+
+</script>
+
+  <!-- V23.29 / V24.9: кнопка з’являється тільки після прокрутки до Timeline -->
+  <button type="button" id="scrollTopBtn" title="Повернутися вгору" aria-label="Повернутися вгору" style="position:fixed;right:18px;bottom:18px;z-index:9999;min-width:104px;height:44px;padding:0 16px;border:1px solid #334155;border-radius:12px;background:#0f141c;color:#f1f5f9;font-size:13px;font-weight:900;letter-spacing:.05em;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;gap:7px;opacity:0;transform:translateY(10px);transition:opacity .18s ease,transform .18s ease;"><span style="font-size:18px;line-height:1;">↑</span><span>ВГОРУ</span></button>
+
+  <script>
+  // V23.29 / V24.9: показувати кнопку тільки після того, як користувач дійшов до Timeline.
+  (function(){
+    function initScrollTopButton(){
+      var btn=document.getElementById('scrollTopBtn');
+      var timeline=document.getElementById('timelineContainer');
+      if(!btn) return;
+
+      function currentScrollTop(){
+        var se=document.scrollingElement || document.documentElement || document.body;
+        return se ? (se.scrollTop || 0) : (window.pageYOffset || 0);
+      }
+
+      function sync(){
+        timeline=document.getElementById('timelineContainer') || timeline;
+        if(!timeline){
+          btn.style.display='none';
+          return;
+        }
+        var rect=timeline.getBoundingClientRect();
+        var reachedTimeline = rect.top <= Math.max(180, window.innerHeight * 0.72);
+        if(reachedTimeline && currentScrollTop() > 50){
+          btn.style.display='flex';
+          requestAnimationFrame(function(){
+            btn.style.opacity='1';
+            btn.style.transform='translateY(0)';
+          });
+        }else{
+          btn.style.opacity='0';
+          btn.style.transform='translateY(10px)';
+          window.setTimeout(function(){
+            var r=(document.getElementById('timelineContainer') || timeline);
+            if(!r || r.getBoundingClientRect().top > Math.max(180, window.innerHeight * 0.72) || currentScrollTop() <= 50){
+              btn.style.display='none';
+            }
+          },190);
+        }
+      }
+
+      function goTop(){
+        var se=document.scrollingElement || document.documentElement || document.body;
+        try{
+          if(se && typeof se.scrollTo==='function') se.scrollTo({top:0,left:0,behavior:'smooth'});
+          else window.scrollTo(0,0);
+        }catch(e){
+          window.scrollTo(0,0);
+        }
+        // Fallback for browsers/WebView where smooth scroll on scrollingElement is ignored.
+        window.setTimeout(function(){
+          if(currentScrollTop() > 5){
+            document.documentElement.scrollTop=0;
+            document.body.scrollTop=0;
+            window.scrollTo(0,0);
+          }
+        },650);
+      }
+
+      btn.addEventListener('click',goTop);
+      window.addEventListener('scroll',sync,{passive:true});
+      window.addEventListener('resize',sync,{passive:true});
+      var observer=new MutationObserver(sync);
+      if(timeline) observer.observe(timeline,{childList:true,subtree:true});
+      sync();
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initScrollTopButton,{once:true});
+    else initScrollTopButton();
+  })();
+  </script>
+</body>
+</html>
