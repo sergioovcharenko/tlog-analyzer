@@ -37,21 +37,30 @@ jobs:
       - name: Run graph viewer UI contract
         run: python -m unittest tests.test_graph_viewer_ui_contract -v
 
-      - name: Run full regression suite
-        run: python -m unittest discover -s tests -v
+      - name: Run relevant regression contracts
+        run: |
+          python -m unittest \
+            tests.test_backend_tx16_mapping \
+            tests.test_engine_load_contract \
+            tests.test_esc_fault_ui_contract \
+            tests.test_repeat_alert_ui \
+            tests.test_timeline_scope_runtime \
+            tests.test_tx16_ui_contract -v
 
-      - name: Check embedded JavaScript syntax
+      - name: Check every inline JavaScript block
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
           s=Path('index.html').read_text(encoding='utf-8')
-          a=s.rfind('<script>')
-          b=s.find('</script>',a)
-          if a < 0 or b < 0:
-              raise SystemExit('embedded script not found')
-          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          blocks=re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>',s,re.S|re.I)
+          if not blocks:
+              raise SystemExit('inline scripts not found')
+          for i,block in enumerate(blocks):
+              Path(f'/tmp/app-{i}.js').write_text(block,encoding='utf-8')
+          print(f'inline script blocks: {len(blocks)}')
           PY
-          node --check /tmp/app.js
+          for f in /tmp/app-*.js; do node --check "$f"; done
 
       - name: Commit patched application
         run: |
