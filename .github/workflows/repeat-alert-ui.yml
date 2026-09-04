@@ -5,14 +5,53 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/repeat-alert-ui.yml'
+      - 'tools/apply_repeat_alert_ui.py'
       - 'tests/test_repeat_alert_ui.py'
       - 'index.html'
       - 'backend/main.py'
+
+permissions:
+  contents: write
 
 jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply repeat-only alert UI patch
+        run: python tools/apply_repeat_alert_ui.py
       - name: Run repeat alert UI contract
         run: python -m unittest tests/test_repeat_alert_ui.py -v
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          start=0
+          n=0
+          while True:
+            a=s.find('<script>', start)
+            if a<0: break
+            b=s.find('</script>', a)
+            if b<0: raise SystemExit('Unclosed script tag')
+            code=s[a+8:b]
+            if code.strip():
+              n+=1
+              Path(f'/tmp/app-{n}.js').write_text(code,encoding='utf-8')
+            start=b+9
+          print(n)
+          PY
+          for f in /tmp/app-*.js; do node --check "$f"; done
+      - name: Check backend syntax
+        run: python -m py_compile backend/main.py
+      - name: Commit patched frontend and backend
+        run: |
+          if git diff --quiet -- index.html backend/main.py; then
+            echo 'No production changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html backend/main.py
+          git commit -m 'fix: simplify alerts and label SA SB switches'
+          git push
