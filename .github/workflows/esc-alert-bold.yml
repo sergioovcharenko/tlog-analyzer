@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/esc-alert-bold.yml'
+      - 'tools/apply_esc_alert_bold.py'
+      - 'tests/test_esc_alert_bold.py'
 
 permissions:
   contents: write
