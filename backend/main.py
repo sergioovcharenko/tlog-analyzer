@@ -1795,7 +1795,7 @@ async def analyze(file: UploadFile = File(...)):
 
         def communication_vtx_state_text(state):
             if not isinstance(state, dict):
-                return "CH7/CH8 —"
+                return "SA/SB —"
             ch7 = state.get("ch7")
             ch8 = state.get("ch8")
             freq = state.get("frequency")
@@ -1803,14 +1803,14 @@ async def analyze(file: UploadFile = File(...)):
             channel = state.get("channel")
             parts = []
             if ch7 is not None:
-                parts.append(f"CH7 {int(round(ch7))} us")
+                parts.append(f"SA {int(round(ch7))} us")
             if ch8 is not None:
-                parts.append(f"CH8 {int(round(ch8))} us")
+                parts.append(f"SB {int(round(ch8))} us")
             if freq is not None:
                 parts.append(f"VTX {freq} MHz")
             elif band or channel:
                 parts.append(f"VTX {band or '—'} / {channel or '—'}")
-            return ", ".join(parts) if parts else "CH7/CH8 —"
+            return ", ".join(parts) if parts else "SA/SB —"
 
         def communication_state_changed(before, after):
             if not isinstance(before, dict) or not isinstance(after, dict):
@@ -2498,10 +2498,10 @@ async def analyze(file: UploadFile = File(...)):
                     communication_restore_count += 1
 
                     change_text = (
-                        " ⚠️ Стан CH7/CH8/VTX після відновлення відрізняється від стану до втрати; "
+                        " ⚠️ Стан SA/SB/VTX після відновлення відрізняється від стану до втрати; "
                         "перемикання відбулося всередині сліпої зони, точний час невідомий."
                         if changed else
-                        " Стан CH7/CH8/VTX до та після втрати однаковий."
+                        " Стан SA/SB/VTX до та після втрати однаковий."
                     )
                     add_event(
                         f"🟢 COMMUNICATION RESTORED: {round(dbm_val)} dBm після {duration:.2f} с без підтвердженого радіолінку. "
@@ -3624,7 +3624,7 @@ async def analyze(file: UploadFile = File(...)):
                 f'<span class="ai-jump" data-jump-time="{first_loss_time}">'
                 f"📡 <b>Втрати MAVLink/радіолінку:</b> зафіксовано {len(communication_loss_episodes)} еп.; "
                 f"відновлено {len(recovered_eps)}{longest_text}. "
-                f"Подій зі зміною CH7/CH8/VTX між останнім станом до втрати та першим станом після відновлення: {len(changed_eps)}. "
+                f"Подій зі зміною SA/SB/VTX між останнім станом до втрати та першим станом після відновлення: {len(changed_eps)}. "
                 "Під час -128 dBm точні проміжні перемикання не можуть бути відновлені з TLOG, якщо MAVLink у цей час був відсутній. "
                 "Натисніть, щоб перейти до першої втрати зв'язку.</span>"
             )

@@ -199,49 +199,25 @@ body{
 .ai-list li.ai-clickable{cursor:pointer;border-radius:5px;padding:3px 6px;margin-left:-6px;transition:.15s}
 .ai-list li.ai-clickable:hover{background:rgba(59,130,246,.10);color:#bfdbfe}
 .ai-jump{display:inline-block;width:100%;cursor:pointer}
-.esc-fault-alert-bold{font-weight:800}
-.attention-summary-item{list-style:none;margin-left:-20px}
-.attention-summary{
-  border:1px solid var(--border-color);
-  border-radius:8px;
-  background:#0f141c;
-  overflow:hidden
-}
-.attention-summary>summary{
-  cursor:pointer;
-  padding:11px 13px;
-  font-weight:800;
-  color:#f8fafc;
-  user-select:none
-}
-.attention-summary[open]>summary{border-bottom:1px solid var(--border-color)}
-.attention-groups{display:grid;gap:8px;padding:10px}
-.attention-section{
+.vtx-switch-label{color:#60a5fa;font-weight:800}
+.ai-list li.alert-critical{border-left:3px solid #ef4444;background:rgba(239,68,68,.07)}
+.ai-list li.alert-attention{border-left:3px solid #f97316;background:rgba(249,115,22,.07)}
+.ai-list li.alert-warning{border-left:3px solid #eab308;background:rgba(234,179,8,.06)}
+.ai-list li.alert-info{border-left:3px solid #3b82f6;background:rgba(59,130,246,.04)}
+.repeat-alert-group-item{list-style:none;margin-left:-20px}
+.repeat-alert-group{
   border:1px solid var(--border-color);
   border-radius:7px;
   overflow:hidden;
-  background:rgba(15,20,28,.72)
+  background:#0f141c;
 }
-.attention-section>summary{
-  cursor:pointer;
-  padding:8px 10px;
-  font-weight:800;
-  user-select:none
-}
-.attention-items{margin:0;padding:6px 10px 8px 30px;line-height:1.45}
-.attention-items li{margin:3px 0;padding:4px 6px;border-radius:5px}
-.attention-critical{border-left:4px solid #ef4444}
-.attention-critical>summary{color:#fca5a5}
-.attention-critical .ai-clickable{background:rgba(239,68,68,.07)}
-.attention-attention{border-left:4px solid #f97316}
-.attention-attention>summary{color:#fdba74}
-.attention-attention .ai-clickable{background:rgba(249,115,22,.07)}
-.attention-warning{border-left:4px solid #eab308}
-.attention-warning>summary{color:#fde047}
-.attention-warning .ai-clickable{background:rgba(234,179,8,.06)}
-.attention-info{border-left:4px solid #3b82f6}
-.attention-info>summary{color:#93c5fd}
-.attention-info .ai-clickable{background:rgba(59,130,246,.05)}
+.repeat-alert-group>summary{cursor:pointer;padding:8px 10px;font-weight:800;user-select:none}
+.repeat-alert-items{margin:0;padding:5px 10px 8px 30px;line-height:1.45}
+.repeat-alert-items li{margin:3px 0;padding:4px 6px;border-radius:5px}
+.repeat-critical{border-left:4px solid #ef4444}.repeat-critical>summary{color:#fca5a5}
+.repeat-attention{border-left:4px solid #f97316}.repeat-attention>summary{color:#fdba74}
+.repeat-warning{border-left:4px solid #eab308}.repeat-warning>summary{color:#fde047}
+.repeat-info{border-left:4px solid #3b82f6}.repeat-info>summary{color:#93c5fd}
 .timeline{
   position:relative;
   background:var(--bg-card);
@@ -1492,8 +1468,10 @@ function buildEscPowertrainAlerts(timeline){
       if(firstConfirmed.confirmedByCurrent)evidence.push('одночасно знижений струм ESC');
       if(firstConfirmed.confirmedByNonzeroRpm)evidence.push('аномалія підтверджена не лише нульовими RPM-пакетами');
 
-      const text=`🔴 ЙМОВІРНА НЕСПРАВНІСТЬ MOTOR/ESC ${motor}: ${evidence.join('; ')}. Вперше помітно ${phase} (${firstAnomalyTime}), тривалість підтвердженої аномалії ≈ ${firstConfirmed.duration.toFixed(1)} с. Одиничний RPM=0 без стійкості/підтвердження струмом не вважається відмовою.`;
-      alerts.push(`<span class="ai-jump esc-fault-alert-bold" data-jump-time="${firstAnomalyTime}">${text} Можливі причини: двигун, ESC, силове з'єднання або живлення; TLOG не встановлює конкретну фізичну причину. Натисніть, щоб перейти до Timeline.</span>`);
+      const escTitle=`🔴 ЙМОВІРНА НЕСПРАВНІСТЬ MOTOR/ESC ${motor}:`;
+      const escDetails=`${evidence.join('; ')}. Вперше помітно ${phase} (${firstAnomalyTime}), тривалість підтвердженої аномалії ≈ ${firstConfirmed.duration.toFixed(1)} с. Одиничний RPM=0 без стійкості/підтвердження струмом не вважається відмовою.`;
+      const text=`${escTitle} ${escDetails}`;
+      alerts.push(`<span class="ai-jump" data-jump-time="${firstAnomalyTime}"><b>${escTitle}</b> ${escDetails} Можливі причини: двигун, ESC, силове з'єднання або живлення; TLOG не встановлює конкретну фізичну причину. Натисніть, щоб перейти до Timeline.</span>`);
       events.push({...firstConfirmed.firstRow,eventType:'ESC_POWERTRAIN_FAULT',analysisText:text,isError:true,systemText:firstConfirmed.firstRow?.systemText||''});
     }
   });
@@ -1514,50 +1492,83 @@ function attentionSeverityForAlert(alertHtml){
     /Лог закінчився при ARMED/i.test(text)||
     /ЛОГ ОБІРВАВСЯ ПРИ ARMED/i.test(text)
   )return 'critical';
-
   if(/Potential Thrust Loss/i.test(text)||/SH натиснуто без дозволу/i.test(text))return 'warning';
-
-  if(/EMERGENCY STOP/i.test(text)&&/не зафіксовано/i.test(text))return 'info';
-  if(/SC \+ SF/i.test(text)&&/не зафіксовано/i.test(text))return 'info';
-
-  if(
-    /ВИСОКЕ СПОЖИВАННЯ СТРУМУ/i.test(text)||
-    /Підсумок системи скиду/i.test(text)||
-    /СКИД/i.test(text)||
-    /EMERGENCY STOP/i.test(text)
-  )return 'attention';
-
+  if(/ВИСОКЕ СПОЖИВАННЯ СТРУМУ/i.test(text))return 'attention';
+  if(/EMERGENCY STOP/i.test(text)&&!/не зафіксовано/i.test(text))return 'attention';
+  if(/СКИД/i.test(text)&&!/не зафіксовано/i.test(text))return 'attention';
   return 'info';
 }
 
-function attentionAlertListItem(alertHtml){
-  const raw=String(alertHtml||'');
+function styleKnownAlertLabels(alertHtml){
+  let raw=String(alertHtml||'');
+  raw=raw.replace(/SA\/SB\/VTX/g,'@@SA_SB_VTX@@');
+  raw=raw.replace(/\bSA\b/g,'<span class="vtx-switch-label">SA</span>');
+  raw=raw.replace(/\bSB\b/g,'<span class="vtx-switch-label">SB</span>');
+  raw=raw.replace(/@@SA_SB_VTX@@/g,'<span class="vtx-switch-label">SA/SB/VTX</span>');
+  return raw;
+}
+
+function attentionAlertListItem(alertHtml,severity='info'){
+  const raw=styleKnownAlertLabels(alertHtml);
   const explicit=raw.match(/data-jump-time=["']([^"']+)["']/i);
   const plain=raw.replace(/<[^>]+>/g,' ');
   const fallback=plain.match(/-?\d{2}:\d{2}\.\d{3}/);
   const jumpTime=explicit?.[1]||fallback?.[0]||'';
-  return `<li class="${jumpTime?'ai-clickable':''}" ${jumpTime?`data-jump-time="${jumpTime}" title="Перейти до рядка Timeline"`:''}>${raw}</li>`;
+  const classes=[jumpTime?'ai-clickable':'',`alert-${severity}`].filter(Boolean).join(' ');
+  return `<li class="${classes}" ${jumpTime?`data-jump-time="${jumpTime}" title="Перейти до рядка Timeline"`:''}>${raw}</li>`;
 }
 
-function buildAttentionSummaryHtml(alerts){
-  const groups={critical:[],attention:[],warning:[],info:[]};
-  (Array.isArray(alerts)?alerts:[]).forEach(alert=>{
-    groups[attentionSeverityForAlert(alert)].push(attentionAlertListItem(alert));
+function repeatedAlertKey(alertHtml){
+  const raw=String(alertHtml||'');
+  const text=raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  if(/Potential Thrust Loss/i.test(text))return 'potential-thrust-loss';
+  const bold=raw.match(/<b>(.*?)<\/b>/i);
+  if(!bold)return null;
+  const label=bold[1].replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').replace(/:\s*$/,'').trim().toLowerCase();
+  return label||null;
+}
+
+function repeatedAlertLabel(alertHtml){
+  const raw=String(alertHtml||'');
+  const text=raw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  if(/Potential Thrust Loss/i.test(text))return '⚠️ Potential Thrust Loss';
+  const bold=raw.match(/<b>(.*?)<\/b>/i);
+  return bold?bold[1].replace(/<[^>]+>/g,' ').replace(/:\s*$/,'').trim():'Повторювані події';
+}
+
+function repeatedAlertCountWord(n){
+  const n10=n%10,n100=n%100;
+  if(n10===1&&n100!==11)return 'подія';
+  if(n10>=2&&n10<=4&&(n100<12||n100>14))return 'події';
+  return 'подій';
+}
+
+function buildRepeatedAlertListHtml(alerts){
+  const entries=(Array.isArray(alerts)?alerts:[]).map((alert,index)=>({
+    alert,index,key:repeatedAlertKey(alert),severity:attentionSeverityForAlert(alert)
+  }));
+  const counts={};
+  entries.forEach(e=>{if(e.key)counts[e.key]=(counts[e.key]||0)+1;});
+  const seen=new Set();
+  const rank={info:0,warning:1,attention:2,critical:3};
+  const out=[];
+
+  entries.forEach(entry=>{
+    if(entry.key&&counts[entry.key]>1){
+      if(seen.has(entry.key))return;
+      seen.add(entry.key);
+      const group=entries.filter(e=>e.key===entry.key);
+      if(group.length>1){
+        const severity=group.reduce((best,e)=>rank[e.severity]>rank[best]?e.severity:best,'info');
+        const children=group.map(e=>attentionAlertListItem(e.alert,e.severity)).join('');
+        const label=repeatedAlertLabel(group[0].alert);
+        out.push(`<li class="repeat-alert-group-item"><details class="repeat-alert-group repeat-${severity}"><summary>${label} — ${group.length} ${repeatedAlertCountWord(group.length)}</summary><ul class="repeat-alert-items">${children}</ul></details></li>`);
+        return;
+      }
+    }
+    out.push(attentionAlertListItem(entry.alert,entry.severity));
   });
-
-  const total=Object.values(groups).reduce((sum,items)=>sum+items.length,0);
-  const config=[
-    ['critical','🔴 Критичне'],
-    ['attention','🟠 Увага'],
-    ['warning','🟡 Попередження'],
-    ['info','🔵 Інформація']
-  ];
-  const sections=config
-    .filter(([key])=>groups[key].length)
-    .map(([key,label])=>`<details class="attention-section attention-${key}" ${(key==='critical'||key==='attention')?'open':''}><summary>${label} — ${groups[key].length}</summary><ul class="attention-items">${groups[key].join('')}</ul></details>`)
-    .join('');
-
-  return `<li class="attention-summary-item"><details class="attention-summary"><summary>⚠️ <b>На що звернути увагу</b> — ${total} подій</summary><div class="attention-groups">${sections}</div></details></li>`;
+  return out.join('');
 }
 
 function renderResults(data){
@@ -1704,7 +1715,7 @@ function renderResults(data){
     ...escPowertrain.alerts
   ];
 
-  document.getElementById('aiAlerts').innerHTML=buildAttentionSummaryHtml(combinedAiAlerts);
+  document.getElementById('aiAlerts').innerHTML=buildRepeatedAlertListHtml(combinedAiAlerts);
 
   document.getElementById('flightGrid').innerHTML=`
     ${createCard('Час польоту',data.flight?.durationText||'—')}
