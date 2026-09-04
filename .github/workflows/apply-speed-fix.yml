@@ -1,0 +1,72 @@
+name: Apply frontend speed fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-speed-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch blocking health check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+
+          old = """    updateProgress(10,'Пробудження сервера...');
+              await pingServerAsync();
+
+              updateProgress(35,'Передача TLOG на сервер...');
+              const result=await analyzeOnServer(selectedFile);"""
+          new = """    updateProgress(15,'Підключення та передача TLOG...');
+              const result=await analyzeOnServer(selectedFile);"""
+
+          if old not in s:
+              raise SystemExit('Expected analyze-flow block not found; refusing unsafe patch')
+          s = s.replace(old, new, 1)
+
+          start = s.find('async function pingServerAsync(){')
+          end = s.find('\nasync function analyzeOnServer(file){', start)
+          if start < 0 or end < 0:
+              raise SystemExit('Expected pingServerAsync block not found; refusing unsafe patch')
+          s = s[:start] + s[end+1:]
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify frontend flow test
+        run: python tests/test_frontend_flow.py
+
+      - name: Verify JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('index.html').read_text(encoding='utf-8')
+          blocks = []
+          for m in re.finditer(r'<script([^>]*)>(.*?)</script>', html, re.I | re.S):
+              attrs, body = m.group(1), m.group(2)
+              if 'src=' in attrs.lower():
+                  continue
+              blocks.append(body)
+          Path('/tmp/index-check.js').write_text('\n;\n'.join(blocks), encoding='utf-8')
+          PY
+          node --check /tmp/index-check.js
+
+      - name: Commit speed fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'perf: start TLOG analysis without blocking health check'
+          git push
