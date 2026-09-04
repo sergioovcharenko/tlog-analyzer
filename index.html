@@ -2301,12 +2301,21 @@ function tx16StateRaw(item){
     sd:rcPwmValue(item,13), sh:rcPwmValue(item,6)
   };
 }
+function tx16VtxFrequency(saPos,sbPos){
+  const matrix={
+    1:{1:5180,2:5240,3:5300},
+    2:{1:5520,2:5580,3:5640},
+    3:{1:5700,2:5765,3:5825}
+  };
+  return matrix[saPos]?.[sbPos]??null;
+}
+
 function tx16NormalizedState(item){
   const r=tx16StateRaw(item);
   const saPos=tx16ThreePos(r.sa), sbPos=tx16ThreePos(r.sb);
   return {
     sa:saPos===1?'5.2 GHz':saPos===2?'5.5 GHz':saPos===3?'5.8 GHz':'—',
-    sb:sbPos?`K${sbPos}`:'—',
+    sb:sbPos?`K${sbPos} • ${tx16VtxFrequency(saPos,sbPos)} MHz`:'—',
     sc:tx16DropSafetyState(r.sc), sf:tx16TwoPosHuman(r.sf,false),
     sd:tx16EmergencyStopSafetyState(r.sd), sh:tx16TwoPosHuman(r.sh,true),
     raw:r
