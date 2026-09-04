@@ -45,3 +45,5 @@ jobs:
           git add index.html
           git commit -m 'feat: report SC SF activity without confirmed drop'
           git push
+
+# rerun: 2
