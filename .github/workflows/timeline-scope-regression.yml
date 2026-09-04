@@ -5,12 +5,48 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/timeline-scope-regression.yml'
-      - 'tests/test_timeline_scope_runtime.py'
+
+permissions:
+  contents: write
 
 jobs:
   runtime-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reproduce runtime scope failure
+
+      - name: Apply timeline scope fix
+        run: python tools/fix_timeline_scope.py
+
+      - name: Run runtime regression test
         run: python -m unittest tests/test_timeline_scope_runtime.py -v
+
+      - name: Check JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=[]
+          pos=0
+          while True:
+              a=s.find('<script>', pos)
+              if a<0: break
+              b=s.find('</script>', a)
+              if b<0: break
+              scripts.append(s[a+8:b])
+              pos=b+9
+          Path('/tmp/all-inline.js').write_text('\n'.join(scripts), encoding='utf-8')
+          PY
+          node --check /tmp/all-inline.js
+
+      - name: Commit fix
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index.html changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'fix: restore analyzer runtime after helper scope regression'
+          git push
