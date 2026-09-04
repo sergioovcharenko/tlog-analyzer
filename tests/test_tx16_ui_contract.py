@@ -34,7 +34,8 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn("ОДИНОЧНИЙ СКИД", HTML)
 
     def test_dual_drop_requires_sc_r_or_l_before_sf_rising_edge(self):
-        self.assertIn("if(prevSf===false && sf===true && (scPos===2||scPos===3))", HTML)
+        self.assertIn("if(prevSf===false && sf===true)", HTML)
+        self.assertIn("if(scPos===2||scPos===3)", HTML)
         self.assertIn("const side=scPos===2?'R':'L';", HTML)
         self.assertIn("<b>СКИД ${ev.side}", HTML)
 
