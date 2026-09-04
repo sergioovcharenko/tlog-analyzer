@@ -1,0 +1,15 @@
+name: ESC fault contract RED
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/esc-fault-red.yml'
+
+jobs:
+  red-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ESC fault contract
+        run: python -m unittest discover -s tests -p 'test_esc_fault_ui_contract.py' -v
