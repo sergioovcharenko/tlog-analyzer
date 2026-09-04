@@ -1,0 +1,37 @@
+name: Attitude horizon v2
+
+on:
+  push:
+    branches: [attitude-horizon-v2-work]
+    paths:
+      - 'index.html'
+      - 'tests/test_graph_viewer_ui_contract.py'
+      - '.github/workflows/attitude-horizon-v2.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run graph viewer UI contract
+        run: python -m unittest tests.test_graph_viewer_ui_contract -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          blocks=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)
+          if not blocks:
+              raise SystemExit('no inline script blocks')
+          for i,b in enumerate(blocks):
+              if not b.strip():
+                  continue
+              p=Path(f'/tmp/app-{i}.js')
+              p.write_text(b,encoding='utf-8')
+              import subprocess
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
