@@ -79,6 +79,12 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn(".tx16-chip.drop-control", HTML)
         self.assertIn(".tx16-chip.emergency-control", HTML)
 
+    def test_sb_timeline_chip_includes_vtx_frequency_from_sa_sb_matrix(self):
+        self.assertIn("function tx16VtxFrequency", HTML)
+        for freq in (5180, 5240, 5300, 5520, 5580, 5640, 5700, 5765, 5825):
+            self.assertIn(str(freq), HTML)
+        self.assertIn("sb:sbPos?`K${sbPos} • ${tx16VtxFrequency(saPos,sbPos)} MHz`:'—'", HTML)
+
     def test_disarmed_physical_movement_is_conditional(self):
         self.assertIn("function detectDisarmedPhysicalMovement", HTML)
         self.assertIn("DISARMED_PHYSICAL_MOVEMENT", HTML)
