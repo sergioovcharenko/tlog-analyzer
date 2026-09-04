@@ -6,23 +6,29 @@ on:
     paths:
       - 'index.html'
       - 'tests/test_graph_viewer_ui_contract.py'
+      - 'tools/apply_attitude_horizon_v2.py'
       - '.github/workflows/attitude-horizon-v2.yml'
 
+permissions:
+  contents: write
+
 jobs:
-  test:
+  patch-test-and-commit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply attitude horizon v2
+        run: python tools/apply_attitude_horizon_v2.py
       - name: Run graph viewer UI contract
         run: python -m unittest tests.test_graph_viewer_ui_contract -v
       - name: Check inline JavaScript syntax
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re, subprocess
           s=Path('index.html').read_text(encoding='utf-8')
           blocks=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)
           if not blocks:
@@ -32,6 +38,16 @@ jobs:
                   continue
               p=Path(f'/tmp/app-{i}.js')
               p.write_text(b,encoding='utf-8')
-              import subprocess
               subprocess.run(['node','--check',str(p)],check=True)
           PY
+      - name: Commit patched index
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: upgrade attitude horizon to v2'
+          git push
