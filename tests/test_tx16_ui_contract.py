@@ -38,6 +38,13 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn("const side=scPos===2?'R':'L';", HTML)
         self.assertIn("<b>СКИД ${ev.side}", HTML)
 
+    def test_sc_sf_activity_is_reported_even_without_valid_drop(self):
+        self.assertIn("scTransitions", HTML)
+        self.assertIn("sfActivations", HTML)
+        self.assertIn("SC: зафіксовано", HTML)
+        self.assertIn("SF: зафіксовано", HTML)
+        self.assertIn("валідний скид не підтверджено", HTML)
+
     def test_old_emergency_stop_semantics_are_removed(self):
         self.assertNotIn("EMERGENCY STOP", HTML)
         self.assertNotIn("SD=ДО СЕБЕ + SH", HTML)
