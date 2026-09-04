@@ -667,13 +667,13 @@ body{
 }
 .tx16-chip.active{color:#22c55e;border-color:rgba(34,197,94,.45)}
 .tx16-chip.stop{color:#f87171;border-color:rgba(239,68,68,.55);font-weight:900}
-/* Functional groups: SC+SF = drop system (red), SD+SH = Emergency Stop (yellow). */
+/* Functional groups: SC+SF = dual drop (red), SD+SH = single drop (yellow). */
 .tx16-chip.drop-control{color:#fca5a5!important;border-color:rgba(239,68,68,.72)!important;background:rgba(239,68,68,.10)!important;font-weight:800}
 .tx16-chip.drop-control b{color:#fecaca!important}
-.tx16-chip.emergency-control{color:#fde68a!important;border-color:rgba(245,158,11,.78)!important;background:rgba(245,158,11,.10)!important;font-weight:800}
-.tx16-chip.emergency-control b{color:#fef3c7!important}
+.tx16-chip.single-drop-control{color:#fde68a!important;border-color:rgba(245,158,11,.78)!important;background:rgba(245,158,11,.10)!important;font-weight:800}
+.tx16-chip.single-drop-control b{color:#fef3c7!important}
 .tx16-chip.drop-control.changed{box-shadow:0 0 0 1px rgba(239,68,68,.35) inset}
-.tx16-chip.emergency-control.changed{box-shadow:0 0 0 1px rgba(245,158,11,.35) inset}
+.tx16-chip.single-drop-control.changed{box-shadow:0 0 0 1px rgba(245,158,11,.35) inset}
 .tx16-empty{color:#64748b;font:10px monospace}
 .disarmed-movement-row{background:rgba(245,158,11,.13)!important;box-shadow:inset 5px 0 0 #f59e0b}
 .disarmed-movement-row .tl-analysis{color:#fde68a!important;font-weight:900}
@@ -1494,7 +1494,6 @@ function attentionSeverityForAlert(alertHtml){
   )return 'critical';
   if(/Potential Thrust Loss/i.test(text)||/SH натиснуто без дозволу/i.test(text))return 'warning';
   if(/ВИСОКЕ СПОЖИВАННЯ СТРУМУ/i.test(text))return 'attention';
-  if(/EMERGENCY STOP/i.test(text)&&!/не зафіксовано/i.test(text))return 'attention';
   if(/СКИД/i.test(text)&&!/не зафіксовано/i.test(text))return 'attention';
   return 'info';
 }
@@ -1599,7 +1598,7 @@ function renderResults(data){
 
   // TX16S: підтверджена схема цього борта.
   // SA=CH7, SB=CH8 — VTX; SC=CH15 + SF=CH10 — система скиду;
-  // SD=CH13 + SH=CH6 — EMERGENCY STOP; LS=CH12; RS=CH9.
+  // SD=CH13 + SH=CH6 — одиночний скид. LS/RS у UI не показуються.
   // Аналіз лише читає RC_CHANNELS і не відправляє команди на борт.
   function timelineSeconds(t){
     const m=String(t||'').match(/(-?)(\d+):(\d+(?:\.\d+)?)/);
@@ -1610,102 +1609,55 @@ function renderResults(data){
 
   function buildTx16ActivationAlerts(timeline){
     const rows=Array.isArray(timeline)?timeline:[];
-    const dropEvents=[];
-    const emergencyEvents=[];
-    const emergencyBlocked=[];
+    const dualDropEvents=[];
+    const singleDropEvents=[];
     let prevSf=null, prevSh=null;
-    let shStart=null;
 
-    rows.forEach((row,idx)=>{
+    rows.forEach(row=>{
       if(!row)return;
-      const sc=rcPwmValue(row,15);
-      const sd=rcPwmValue(row,13);
       const sf=tx16HighActive(rcPwmValue(row,10));
       const sh=tx16HighActive(rcPwmValue(row,6));
-      const scState=tx16ThreePosHuman(sc);
-      const sdState=tx16ThreePosHuman(sd);
+      const scPos=tx16ThreePos(rcPwmValue(row,15));
+      const sdPos=tx16ThreePos(rcPwmValue(row,13));
 
       if(sf!==null){
-        if(prevSf===false && sf===true){
-          dropEvents.push({time:row.time||'',selector:scState,pwm:rcPwmValue(row,10)});
+        if(prevSf===false && sf===true && (scPos===2||scPos===3)){
+          const side=scPos===2?'R':'L';
+          dualDropEvents.push({
+            time:row.time||'',
+            side,
+            selector:tx16DualDropSafetyState(rcPwmValue(row,15)),
+            pwm:rcPwmValue(row,10)
+          });
         }
         prevSf=sf;
       }
 
       if(sh!==null){
-        if(prevSh===false && sh===true){
-          if(sdState==='ДО СЕБЕ'){
-            shStart={time:row.time||'',seconds:timelineSeconds(row.time),pwm:rcPwmValue(row,6)};
-          }else{
-            emergencyBlocked.push({time:row.time||'',selector:sdState,pwm:rcPwmValue(row,6)});
-          }
-        }
-        if(prevSh===true && sh===false && shStart){
-          const endSec=timelineSeconds(row.time);
-          const duration=(shStart.seconds!==null&&endSec!==null)?Math.max(0,endSec-shStart.seconds):null;
-          emergencyEvents.push({time:shStart.time,endTime:row.time||'',duration,pwm:shStart.pwm});
-          shStart=null;
+        if(prevSh===false && sh===true && sdPos===3){
+          singleDropEvents.push({time:row.time||'',pwm:rcPwmValue(row,6)});
         }
         prevSh=sh;
-      }
-
-      if(idx===rows.length-1 && shStart){
-        const endSec=timelineSeconds(row.time);
-        const duration=(shStart.seconds!==null&&endSec!==null)?Math.max(0,endSec-shStart.seconds):null;
-        emergencyEvents.push({time:shStart.time,endTime:row.time||'',duration,pwm:shStart.pwm});
-        shStart=null;
       }
     });
 
     const out=[];
-    if(dropEvents.length){
-      dropEvents.forEach((ev,i)=>{
-        const n=dropEvents.length>1?` №${i+1}`:'';
-        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🎚 <b>СКИД${n} — SC + SF:</b> ${ev.time}; SC (запобіжник): ${ev.selector}; SF (активатор): УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Натисніть, щоб перейти до Timeline.</span>`);
-      });
-      const kind=dropEvents.length===1?'ОДИНОЧНИЙ СКИД':`ПОДВІЙНИЙ / ПОВТОРНИЙ СКИД (${dropEvents.length} активації)`;
-      out.push(`🎚 <b>Підсумок системи скиду:</b> ${kind}.`);
-    }else{
-      out.push('🎚 <b>SC + SF:</b> активацій системи скиду у TLOG не зафіксовано.');
+    dualDropEvents.forEach((ev,i)=>{
+      const n=dualDropEvents.length>1?` №${i+1}`:'';
+      out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🎚 <b>СКИД ${ev.side}${n} — SC + SF:</b> ${ev.time}; SC: ${ev.selector}; SF: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Натисніть, щоб перейти до Timeline.</span>`);
+    });
+    const sides=new Set(dualDropEvents.map(ev=>ev.side));
+    if(sides.has('R')&&sides.has('L')){
+      out.push('🎚 <b>ПОДВІЙНИЙ СКИД:</b> зафіксовано валідну активацію R та L.');
     }
 
-    if(emergencyEvents.length){
-      emergencyEvents.forEach((ev,i)=>{
-        const n=emergencyEvents.length>1?` №${i+1}`:'';
-        const d=typeof ev.duration==='number'?`${ev.duration.toFixed(2)} с`:'невідомо';
-        const ten=(typeof ev.duration==='number'&&ev.duration>=9.8)?' • утримано приблизно 10 с':'';
-        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🛑 <b>EMERGENCY STOP${n} — команда активатора:</b> ${ev.time}; SD: ДО СЕБЕ (запобіжник дозволив); SH утримувався ${d}${ten}. Натисніть, щоб перейти до Timeline.</span>`);
-      });
-    }else{
-      out.push('🛑 <b>EMERGENCY STOP:</b> валідної активації SD=ДО СЕБЕ + SH не зафіксовано.');
-    }
-    emergencyBlocked.forEach(ev=>{
-      out.push(`⚠️ <b>SH натиснуто без дозволу Emergency Stop:</b> ${ev.time}; SD: ${ev.selector}. Як Emergency Stop не зараховано.`);
+    singleDropEvents.forEach((ev,i)=>{
+      const n=singleDropEvents.length>1?` №${i+1}`:'';
+      out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🎚 <b>ОДИНОЧНИЙ СКИД${n} — SD + SH:</b> ${ev.time}; SD: ЗАПОБІЖНИК ЗНЯТО; SH: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Натисніть, щоб перейти до Timeline.</span>`);
     });
     return out;
   }
 
-  const disarmedMovement=detectDisarmedPhysicalMovement(data);
-  if(disarmedMovement.events.length){
-    data.timeline=[...(Array.isArray(data.timeline)?data.timeline:[]),...disarmedMovement.events]
-      .sort((a,b)=>(timelineSeconds(a?.time)??0)-(timelineSeconds(b?.time)??0));
-  }
-
-  const escPowertrain=buildEscPowertrainAlerts(data.timeline);
-  if(escPowertrain.events.length){
-    data.timeline=[...(Array.isArray(data.timeline)?data.timeline:[]),...escPowertrain.events]
-      .sort((a,b)=>(timelineSeconds(a?.time)??0)-(timelineSeconds(b?.time)??0));
-  }
-
-  const maxCurrentRow=(Array.isArray(data.timeline)?data.timeline:[])
-    .filter(row=>typeof row?.curr==='number'&&Number.isFinite(row.curr))
-    .reduce((best,row)=>(!best||row.curr>best.curr)?row:best,null);
-  const highCurrentAlerts=[];
-  if(maxCurrentRow&&maxCurrentRow.curr>80){
-    const time=maxCurrentRow.time||'';
-    const jumpAttr=time?` data-jump-time="${time}"`:'';
-    highCurrentAlerts.push(`<span class="ai-jump" data-attention-severity="attention"${jumpAttr}>⚡ <b>ВИСОКЕ СПОЖИВАННЯ СТРУМУ:</b> максимум ${maxCurrentRow.curr.toFixed(1)} A${time?` о ${time}`:''}. Порогове значення уваги: &gt;80 A.${time?' Натисніть, щоб перейти до Timeline.':''}</span>`);
-  }
 
   const combinedAiAlerts=[
     ...highCurrentAlerts,
@@ -1831,12 +1783,10 @@ function renderResults(data){
     ${createCard('CH4 Yaw',data.radioChannels?.ch4||'—')}
     ${createCard('SA — CH7',uiSwitchSummary(collectChannel(7),p=>`5.${tx16ThreePos(p)===1?'2':tx16ThreePos(p)===2?'5':'8'} GHz`),'Вибір діапазону VTX: 5.2 / 5.5 / 5.8 GHz')}
     ${createCard('SB — CH8',uiSwitchSummary(collectChannel(8),p=>`K${tx16ThreePos(p)||'—'}`),'Вибір відеоканалу K1 / K2 / K3')}
-    ${createCard('SC — CH15',uiSwitchSummary(collectChannel(15),tx16ThreePosHuman),'Запобіжник системи скиду; працює у зв’язці з SF')}
-    ${createCard('SF — CH10',uiSwitchSummary(collectChannel(10),p=>tx16TwoPosHuman(p,false)),'Активатор системи скиду; аналізується разом із SC')}
-    ${createCard('SD — CH13',uiSwitchSummary(collectChannel(13),tx16ThreePosHuman),'3-позиційний запобіжник EMERGENCY STOP; дозвіл лише ДО СЕБЕ')}
-    ${createCard('SH — CH6',uiSwitchSummary(collectChannel(6),p=>tx16TwoPosHuman(p,true)),'Активатор EMERGENCY STOP; враховується лише при SD=ДО СЕБЕ')}
-    ${createCard('LS — CH12',uiSwitchSummary(collectChannel(12),tx16ThreePosHuman),'Кут нахилу камери')}
-    ${createCard('RS — CH9',uiSwitchSummary(collectChannel(9),tx16ThreePosHuman),'Zoom камери: + / нейтраль / −')}
+    ${createCard('SC — CH15',uiSwitchSummary(collectChannel(15),tx16DualDropSafetyState),'Подвійний скид: ВІД СЕБЕ — запобіжник; СЕРЕДИНА — R; ДО СЕБЕ — L')}
+    ${createCard('SF — CH10',uiSwitchSummary(collectChannel(10),p=>tx16TwoPosHuman(p,false)),'Активатор подвійного скиду; скид рахується лише коли SC вибрано R або L')}
+    ${createCard('SD — CH13',uiSwitchSummary(collectChannel(13),tx16SingleDropSafetyState),'Одиночний скид: ВІД СЕБЕ/СЕРЕДИНА — запобіжник; ДО СЕБЕ — запобіжник знято')}
+    ${createCard('SH — CH6',uiSwitchSummary(collectChannel(6),p=>tx16TwoPosHuman(p,true)),'Активатор одиночного скиду; скид рахується лише коли SD=ЗАПОБІЖНИК ЗНЯТО')}
     ${createCard(
       'Радіокалібрування',
       data.flight?.radioCalibration?.detected ? `ВИЯВЛЕНО • ${data.flight.radioCalibration.confidence??0}%` : 'Не виявлено',
@@ -2097,24 +2047,23 @@ function renderTx16Switches(item){
   const sa=rcPwmValue(item,7), sb=rcPwmValue(item,8);
   const sc=rcPwmValue(item,15), sf=rcPwmValue(item,10);
   const sd=rcPwmValue(item,13), sh=rcPwmValue(item,6);
-  const ls=rcPwmValue(item,12), rs=rcPwmValue(item,9);
   const sfOn=tx16HighActive(sf), shOn=tx16HighActive(sh);
-  const sdArmed=tx16ThreePos(sd)===3;
+  const scPos=tx16ThreePos(sc), sdPos=tx16ThreePos(sd);
   const pwm=v=>v===null?'—':`${Math.round(v)} us`;
   const card=(name,ch,state,cls='')=>`<div class="switch-card"><div class="switch-name">${name}</div><div class="switch-channel">CH${ch} • ${pwm(rcPwmValue(item,ch))}</div><div class="switch-state ${cls}"><b>${state}</b></div></div>`;
   const band=tx16ThreePos(sa); const bandText=band===1?'5.2 GHz':band===2?'5.5 GHz':band===3?'5.8 GHz':'—';
   const sbPos=tx16ThreePos(sb); const sbText=sbPos?`K${sbPos}`:'—';
   return `<div class="switches-wrap">
-    <div class="switches-title">🎚 TX16S — SA / SB / SC / SF / SD / SH / LS / RS</div>
+    <div class="switches-title">🎚 TX16S — SA / SB / SC / SF / SD / SH</div>
     <div class="switches-grid">
       ${card('SA',7,bandText)}${card('SB',8,sbText)}
-      ${card('SC',15,tx16ThreePosHuman(sc),tx16ThreePos(sc)===3?'switch-active':'switch-safe')}
-      ${card('SF',10,sfOn===true?'АКТИВАТОР ON':sfOn===false?'OFF':'ПЕРЕХІДНА ЗОНА',sfOn===true?'switch-active':'')}
-      ${card('SD',13,`${tx16ThreePosHuman(sd)}${sdArmed?' • E-STOP ARMED':''}`,sdArmed?'switch-stop':'switch-safe')}
-      ${card('SH',6,shOn===true?'EMERGENCY ACTIVATOR':shOn===false?'НЕ НАТИСНУТО':'ПЕРЕХІДНА ЗОНА',shOn===true&&sdArmed?'switch-stop':'')}
-      ${card('LS',12,tx16ThreePosHuman(ls))}${card('RS',9,tx16ThreePosHuman(rs))}
+      ${card('SC',15,tx16DualDropSafetyState(sc),scPos===1?'switch-safe':'switch-stop')}
+      ${card('SF',10,sfOn===true?'АКТИВАТОР УВІМКНЕНО':sfOn===false?'НЕ АКТИВОВАНО':'ПЕРЕХІДНА ЗОНА',sfOn===true?'switch-stop':'switch-safe')}
+      ${card('SD',13,tx16SingleDropSafetyState(sd),sdPos===3?'switch-active':'switch-safe')}
+      ${card('SH',6,shOn===true?'АКТИВАТОР УВІМКНЕНО':shOn===false?'НЕ АКТИВОВАНО':'ПЕРЕХІДНА ЗОНА',shOn===true&&sdPos===3?'switch-active':'switch-safe')}
     </div></div>`;
 }
+
 
 function stickDotPosition(horizontalPct,verticalPct){
   const x=horizontalPct===null?50:50+clampNumber(horizontalPct,-100,100)*0.38;
@@ -2174,7 +2123,7 @@ function renderTimelineSticks(item){
       </div>
     </div>
     ${renderTx16Switches(item)}
-    <div class="sticks-note">SA/SB керують VTX; SC+SF — система скиду; SD+SH — EMERGENCY STOP; LS/RS — камера. Аналіз лише читає RC_CHANNELS.</div>
+    <div class="sticks-note">SA/SB керують VTX; SC+SF — подвійний скид; SD+SH — одиночний скид. Аналіз лише читає RC_CHANNELS.</div>
     <div class="sticks-note">Відсоток = відхилення від 1500 us до приблизних меж 1000/2000 us. Це команда пілота, а не фактичний кут або потужність моторів.</div>
   `;
 }
@@ -2185,6 +2134,21 @@ function tx16ThreePosHuman(pwm){
   if(pos===1)return 'ВІД СЕБЕ';
   if(pos===2)return 'СЕРЕДИНА';
   if(pos===3)return 'ДО СЕБЕ';
+  return '—';
+}
+
+function tx16DualDropSafetyState(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1)return 'ЗАПОБІЖНИК АКТИВОВАНИЙ';
+  if(pos===2)return 'ЗНЯТО З ЗАПОБІЖНИКА (R)';
+  if(pos===3)return 'ЗНЯТО З ЗАПОБІЖНИКА (L)';
+  return '—';
+}
+
+function tx16SingleDropSafetyState(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1||pos===2)return 'ЗАПОБІЖНИК АКТИВОВАНИЙ';
+  if(pos===3)return 'ЗАПОБІЖНИК ЗНЯТО';
   return '—';
 }
 
@@ -2200,8 +2164,7 @@ function tx16StateRaw(item){
   return {
     sa:rcPwmValue(item,7), sb:rcPwmValue(item,8),
     sc:rcPwmValue(item,15), sf:rcPwmValue(item,10),
-    sd:rcPwmValue(item,13), sh:rcPwmValue(item,6),
-    ls:rcPwmValue(item,12), rs:rcPwmValue(item,9)
+    sd:rcPwmValue(item,13), sh:rcPwmValue(item,6)
   };
 }
 function tx16NormalizedState(item){
@@ -2210,11 +2173,12 @@ function tx16NormalizedState(item){
   return {
     sa:saPos===1?'5.2 GHz':saPos===2?'5.5 GHz':saPos===3?'5.8 GHz':'—',
     sb:sbPos?`K${sbPos}`:'—',
-    sc:tx16ThreePosHuman(r.sc), sf:tx16TwoPosHuman(r.sf,false),
-    sd:tx16ThreePosHuman(r.sd), sh:tx16TwoPosHuman(r.sh,true),
-    ls:tx16ThreePosHuman(r.ls), rs:tx16ThreePosHuman(r.rs), raw:r
+    sc:tx16DualDropSafetyState(r.sc), sf:tx16TwoPosHuman(r.sf,false),
+    sd:tx16SingleDropSafetyState(r.sd), sh:tx16TwoPosHuman(r.sh,true),
+    raw:r
   };
 }
+
 
 function renderTx16TimelineSummary(item,prevItem){
   const cur=tx16NormalizedState(item);
@@ -2223,18 +2187,17 @@ function renderTx16TimelineSummary(item,prevItem){
   if(!any)return '<span class="tx16-empty">Немає RC-даних</span>';
 
   const changed=k=>Boolean(prev && prev[k]!=='—' && cur[k]!=='—' && prev[k]!==cur[k]);
-  const chip=(label,key,extraClass='')=>{
+  const chip=(label,key,extra='')=>{
     const isChanged=changed(key);
+    const cls=`tx16-chip${isChanged?' changed':''}${extra?' '+extra:''}`;
+    const title=isChanged?`${label}: ${prev[key]} → ${cur[key]}`:`${label}: ${cur[key]}`;
     const before=isChanged?`${prev[key]} → `:'';
-    const cls=['tx16-chip',isChanged?'changed':'',extraClass].filter(Boolean).join(' ');
-    const pwm=cur.raw[key];
-    const title=`${label}: ${before}${cur[key]}${typeof pwm==='number'?` (${Math.round(pwm)} us)`:''}`;
     return `<span class="${cls}" title="${title}"><b>${label}:</b> ${before}${cur[key]}</span>`;
   };
 
   const sfActive=cur.sf==='УВІМКНЕНО'?' active':'';
-  const shActive=(cur.sh==='НАТИСНУТО'&&cur.sd==='ДО СЕБЕ')?' stop':'';
-  return `<div class="tl-tx16s">${chip('SA','sa')}${chip('SB','sb')}${chip('SC','sc','drop-control')}${chip('SF','sf','drop-control'+sfActive)}${chip('SD','sd','emergency-control')}${chip('SH','sh','emergency-control'+shActive)}${chip('LS','ls')}${chip('RS','rs')}</div>`;
+  const shActive=(cur.sh==='НАТИСНУТО'&&cur.sd==='ЗАПОБІЖНИК ЗНЯТО')?' active':'';
+  return `<div class="tl-tx16s">${chip('SA','sa')}${chip('SB','sb')}${chip('SC','sc','drop-control')}${chip('SF','sf','drop-control'+sfActive)}${chip('SD','sd','single-drop-control')}${chip('SH','sh','single-drop-control'+shActive)}</div>`;
 }
 
 
@@ -2289,7 +2252,7 @@ function renderTimelineTable(items,containerId){
       <div>Темп. FC / ESC</div>
       <div>Запис / повідомлення</div>
       <div>Аналіз</div>
-      <div>TX16S — SA / SB / SC / SF / SD / SH / LS / RS</div>
+      <div>TX16S — SA / SB / SC / SF / SD / SH</div>
       <div>Дія пілота</div>
     </div>
   `;
