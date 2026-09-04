@@ -42,6 +42,25 @@ class GraphViewerUIContractTest(unittest.TestCase):
         self.assertIn("closeGraphViewer()", block)
         self.assertIn("graphViewerBtn", block)
 
+    def test_attitude_horizon_v2_has_roll_scale_and_pitch_ladder(self):
+        for marker in (
+            'class="attitude-roll-scale"',
+            'class="attitude-roll-pointer"',
+            'id="attitudePitchLadder"',
+            'class="attitude-pitch-mark attitude-pitch-major"',
+            'data-angle="30"',
+            'data-angle="-30"',
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_attitude_horizon_v2_keeps_numeric_roll_pitch_readouts(self):
+        self.assertIn("ROLL", self.html)
+        self.assertIn("PITCH", self.html)
+        start = self.html.index("function updateAttitudeAtTime")
+        block = self.html[start:start + 5000]
+        self.assertIn("roll.toFixed(1)", block)
+        self.assertIn("pitch.toFixed(1)", block)
+
 
 if __name__ == "__main__":
     unittest.main()
