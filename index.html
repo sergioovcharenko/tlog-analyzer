@@ -667,6 +667,9 @@ body{
 }
 .tx16-chip.active{color:#22c55e;border-color:rgba(34,197,94,.45)}
 .tx16-chip.stop{color:#f87171;border-color:rgba(239,68,68,.55);font-weight:900}
+/* RF controls: SA+SB = video band/channel (blue). */
+.tx16-chip.rf-control{color:#7dd3fc!important;border-color:rgba(56,189,248,.82)!important;background:rgba(14,116,144,.12)!important;font-weight:800;box-shadow:inset 0 0 0 1px rgba(125,211,252,.10),0 0 10px rgba(56,189,248,.10)}
+.tx16-chip.rf-control b{color:#bae6fd!important}
 /* Functional groups: SC+SF = drop system (red), SD+SH = EMERGENCY STOP (yellow). */
 .tx16-chip.drop-control{color:#fca5a5!important;border-color:rgba(239,68,68,.72)!important;background:rgba(239,68,68,.10)!important;font-weight:800}
 .tx16-chip.drop-control b{color:#fecaca!important}
@@ -2340,7 +2343,7 @@ function renderTx16TimelineSummary(item,prevItem){
 
   const sfActive=cur.sf==='УВІМКНЕНО'?' active':'';
   const shActive=(cur.sh==='НАТИСНУТО'&&cur.sd==='ЗАПОБІЖНИК ЗНЯТО')?' active':'';
-  return `<div class="tl-tx16s">${chip('SA','sa')}${chip('SB','sb')}${chip('SC','sc','drop-control')}${chip('SF','sf','drop-control'+sfActive)}${chip('SD','sd','emergency-control')}${chip('SH','sh','emergency-control'+shActive)}</div>`;
+  return `<div class="tl-tx16s">${chip('SA','sa','rf-control')}${chip('SB','sb','rf-control')}${chip('SC','sc','drop-control')}${chip('SF','sf','drop-control'+sfActive)}${chip('SD','sd','emergency-control')}${chip('SH','sh','emergency-control'+shActive)}</div>`;
 }
 
 
