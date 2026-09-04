@@ -838,7 +838,7 @@ body{
 .graph-viewer-toolbar button,.graph-viewer-toolbar select{height:40px;border:1px solid #334155;border-radius:7px;background:#0f1722;color:#e5edf5;padding:0 12px;font-size:13px}
 .graph-viewer-toolbar button{cursor:pointer;font-weight:800}
 .graph-viewer-title{font-size:15px;font-weight:900;margin-right:auto;color:#f8fafc}
-.graph-viewer-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:14px;align-items:start}
+.graph-viewer-layout{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:14px;align-items:start}
 .graph-viewer-chart-wrap{position:relative;min-width:0;border:1px solid #223044;border-radius:9px;background:#080d13;padding:10px}
 #graphCanvas{width:100%;height:520px;display:block;cursor:crosshair;touch-action:none}
 #graphTooltip{position:absolute;pointer-events:none;display:none;padding:6px 8px;border:1px solid #334155;border-radius:6px;background:rgba(2,6,23,.94);color:#f8fafc;font:12px monospace;white-space:nowrap;z-index:2}
@@ -846,7 +846,7 @@ body{
 #attitudePanel{border:1px solid #223044;border-radius:9px;background:#0b1118;padding:14px;position:sticky;top:16px}
 .attitude-title{font-size:13px;font-weight:900;margin-bottom:10px;color:#f8fafc}
 #attitudeHorizon{width:264px;height:264px;max-width:100%;aspect-ratio:1;border:7px solid #27364a;border-radius:50%;overflow:hidden;position:relative;margin:0 auto 12px;background:#111827;box-shadow:inset 0 0 0 2px #0f172a,0 0 24px rgba(56,189,248,.08)}
-#attitudeScene{position:absolute;left:50%;top:50%;width:190%;height:190%;transform:translate(-50%,-50%);transform-origin:50% 50%;background:linear-gradient(to bottom,#2b78c5 0%,#4f9ad7 49.4%,#f5f5f4 49.5%,#f5f5f4 50.5%,#8a5a36 50.6%,#5f3b27 100%);will-change:transform}
+#attitudeScene{position:absolute;left:50%;top:50%;width:190%;height:190%;transform:translate(-50%,-50%);transform-origin:50% 50%;background:linear-gradient(to bottom,#2b78c5 0%,#4f9ad7 49.4%,#f5f5f4 49.5%,#f5f5f4 50.5%,#4c9a3f 50.6%,#2f7d32 100%);will-change:transform}
 .attitude-pitch-line{position:absolute;left:50%;top:50%;width:42%;height:2px;background:rgba(255,255,255,.94);transform:translate(-50%,-50%);box-shadow:0 1px 1px rgba(0,0,0,.45)}
 #attitudePitchLadder{position:absolute;inset:0;z-index:1;pointer-events:none}
 .attitude-pitch-mark{position:absolute;left:50%;top:calc(50% + var(--y));width:52%;height:14px;transform:translate(-50%,-50%);color:rgba(255,255,255,.9);font:700 9px/14px monospace;text-shadow:0 1px 2px #000}
@@ -862,9 +862,15 @@ body{
 .attitude-aircraft::before,.attitude-aircraft::after{content:'';position:absolute;top:-5px;width:22px;height:14px;border-top:4px solid #facc15}
 .attitude-aircraft::before{left:-2px;transform:rotate(18deg)}.attitude-aircraft::after{right:-2px;transform:rotate(-18deg)}
 .attitude-center-dot{position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:#facc15;transform:translate(-50%,-50%);z-index:7;box-shadow:0 0 0 2px #111827}
-.attitude-values{display:grid;grid-template-columns:1fr 1fr;gap:7px;font:12px monospace}
+.attitude-radio-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 9px}
+.attitude-radio-card{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #28435d;border-radius:7px;padding:8px 10px;background:#08111b;font:800 12px monospace;box-shadow:inset 0 0 0 1px rgba(56,189,248,.04)}
+.attitude-radio-card b{font-size:10px;color:#7dd3fc;letter-spacing:.07em}.attitude-radio-card span{font-size:15px;color:#f8fafc}
+.attitude-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;font:12px monospace}
+.attitude-value{min-width:0}.attitude-value b{white-space:normal}.attitude-value .att-main{display:block;font-size:15px;font-weight:900;color:#f8fafc}
+.attitude-value.att-fc .att-main{color:#38bdf8}.attitude-value.att-current .att-main{color:#fb7185}.attitude-value.att-engine .att-main{color:#facc15}
+
 .attitude-value{border:1px solid #253246;border-radius:6px;padding:8px;background:#080d13}.attitude-value b{display:block;color:#7dd3fc;margin-bottom:2px}
-.attitude-value:nth-child(1),.attitude-value:nth-child(2){font-size:16px;font-weight:900;border-color:#334e68}.attitude-value:nth-child(1) b,.attitude-value:nth-child(2) b{font-size:10px;letter-spacing:.08em}
+.attitude-value b{font-size:10px;letter-spacing:.06em}
 .graph-help{margin-top:8px;color:#64748b;font-size:11px;line-height:1.45}
 @media(max-width:900px){.graph-viewer-layout{grid-template-columns:1fr}#attitudePanel{position:static}#graphCanvas{height:390px}#graphViewerBtn{right:12px;bottom:12px}.graph-viewer-title{width:100%}}
 
@@ -1742,12 +1748,35 @@ function selectGraphTime(timeMs){
 }
 
 function updateAttitudeAtTime(timeMs){
-  const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
-  if(idx<0){if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';if(scene)scene.style.transform='translate(-50%,-50%)';return;}
+  const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
+  const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
+  const rssiEl=document.getElementById('attitudeRssi'),dbmEl=document.getElementById('attitudeDbm');
+  const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
+  const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
+  if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
+  if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  if(idx<0){
+    if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
+    if(scene)scene.style.transform='translate(-50%,-50%)';
+    return;
+  }
   const roll=Number(d.roll_deg?.[idx]),pitch=Number(d.pitch_deg?.[idx]),yaw=Number(d.yaw_deg?.[idx]);
   if(scene&&Number.isFinite(roll)&&Number.isFinite(pitch)){const py=Math.max(-90,Math.min(90,pitch))*2.2;scene.style.transform=`translate(-50%,calc(-50% + ${py}px)) rotate(${-roll}deg)`;}
-  const altMetric=graphViewerState.registry.find(x=>x.key==='altitude'&&x.available);let alt=null;if(altMetric){const s=graphSeries(altMetric),ai=nearestSampleIndex(s.times,timeMs);if(ai>=0)alt=s.values[ai];}
-  if(values)values.innerHTML=`<div class="attitude-value"><b>ROLL</b>${Number.isFinite(roll)?roll.toFixed(1)+'°':'—'}</div><div class="attitude-value"><b>PITCH</b>${Number.isFinite(pitch)?pitch.toFixed(1)+'°':'—'}</div><div class="attitude-value"><b>YAW</b>${Number.isFinite(yaw)?yaw.toFixed(1)+'°':'—'}</div><div class="attitude-value"><b>ALT</b>${Number.isFinite(alt)?alt.toFixed(1)+' м':'—'}</div><div class="attitude-value" style="grid-column:1/-1"><b>ЧАС</b>${formatGraphTime(timeMs)}</div>`;
+  const alt=sample('altitude_time_ms','altitude_m');
+  const voltage=sample('voltage_time_ms','voltage_v');
+  const fcTemp=sample('fc_temp_time_ms','fc_temp_c');
+  const current=sample('current_time_ms','current_a');
+  const engineLoad=sample('engine_load_time_ms','engine_load_pct');
+  if(values)values.innerHTML=`
+    <div class="attitude-value"><b>ROLL</b><span class="att-main">${Number.isFinite(roll)?roll.toFixed(1)+'°':'—'}</span></div>
+    <div class="attitude-value"><b>PITCH</b><span class="att-main">${Number.isFinite(pitch)?pitch.toFixed(1)+'°':'—'}</span></div>
+    <div class="attitude-value"><b>YAW</b><span class="att-main">${Number.isFinite(yaw)?yaw.toFixed(1)+'°':'—'}</span></div>
+    <div class="attitude-value"><b>ALT</b><span class="att-main">${alt===null?'—':alt.toFixed(1)+' м'}</span></div>
+    <div class="attitude-value"><b>ЧАС</b><span class="att-main">${formatGraphTime(timeMs)}</span></div>
+    <div class="attitude-value"><b>BAT</b><span class="att-main">${voltage===null?'—':voltage.toFixed(1)+' V'}</span></div>
+    <div class="attitude-value att-fc"><b>ТЕМПЕРАТУРА FC</b><span class="att-main">${fcTemp===null?'—':fcTemp.toFixed(1)+' °C'}</span></div>
+    <div class="attitude-value att-current"><b>СПОЖИВАННЯ СТРУМУ</b><span class="att-main">${current===null?'—':current.toFixed(1)+' A'}</span></div>
+    <div class="attitude-value att-engine"><b>ENGINE LOAD</b><span class="att-main">${engineLoad===null?'—':engineLoad.toFixed(1)+' %'}</span></div>`;
 }
 
 function graphTimeFromClientX(clientX){
@@ -4882,6 +4911,10 @@ function renderTimelineTable(items,containerId){
       </div>
       <aside id="attitudePanel">
         <div class="attitude-title">✈ АВІАГОРИЗОНТ</div>
+        <div class="attitude-radio-row">
+          <div class="attitude-radio-card"><b>RSSI</b><span id="attitudeRssi">—</span></div>
+          <div class="attitude-radio-card"><b>dBm</b><span id="attitudeDbm">—</span></div>
+        </div>
         <div id="attitudeHorizon" aria-label="Авіагоризонт з шкалою крену і тангажу">
           <div id="attitudeScene">
             <div class="attitude-pitch-line"></div>

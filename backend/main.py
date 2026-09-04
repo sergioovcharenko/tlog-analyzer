@@ -196,7 +196,9 @@ def _build_graph_data(timeline_rows, attitude_samples=None, base_timestamp=0.0):
         append_pair("voltage_time_ms", "voltage_v", t_ms, row.get("volt"))
         append_pair("current_time_ms", "current_a", t_ms, row.get("curr"))
         append_pair("engine_load_time_ms", "engine_load_pct", t_ms, row.get("engineLoad"))
+        append_pair("rssi_time_ms", "rssi_pct", t_ms, row.get("rssi"))
         append_pair("radio_time_ms", "radio_dbm", t_ms, row.get("dbm"))
+        append_pair("fc_temp_time_ms", "fc_temp_c", t_ms, row.get("temp"))
         append_pair("vertical_speed_time_ms", "vertical_speed_down_ms", t_ms, row.get("verticalSpeedDown"))
 
         rc = row.get("rcChannels") or {}
