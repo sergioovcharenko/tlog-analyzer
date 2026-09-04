@@ -1,0 +1,45 @@
+name: Apply movement detection and TX16 colors
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-disarmed-movement-and-colors.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply frontend patch
+        run: python tools/apply_disarmed_movement_and_colors.py
+
+      - name: Run TX16 UI contract tests
+        run: python -m unittest discover -s tests -p 'test_tx16_ui_contract.py' -v
+
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>')
+          b=s.find('</script>',a)
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+
+      - name: Commit patched frontend
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No frontend changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: detect disarmed movement and color TX16 safety controls'
+          git push
