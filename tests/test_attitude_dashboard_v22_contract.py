@@ -38,6 +38,11 @@ class AttitudeDashboardV22ContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, self.backend)
 
+    def test_roll_pointer_moves_with_bank_angle(self):
+        self.assertIn('id="attitudeRollPointer"', self.html)
+        self.assertIn("document.getElementById('attitudeRollPointer')", self.html)
+        self.assertIn("pointer.style.transform=`translate(-50%,-50%) rotate(${-roll}deg) translateY(-112px)`", self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
