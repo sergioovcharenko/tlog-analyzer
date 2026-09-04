@@ -1268,82 +1268,91 @@ function renderResults(data){
 
   aiTitle.textContent=data.ai?.verdict||'Результати';
 
-  // V23.11 — короткий підсумок фактичних активацій TX16S у верхньому AI-блоці.
-  // SC+SF: подією вважаємо фронт SF OFF -> ON і показуємо положення SC у цю мить.
-  // SD+SH: подією вважаємо фронт SH НЕ НАТИСНУТО -> НАТИСНУТО і показуємо положення SD.
-  // Це лише аналіз телеметрії: код не створює і не відправляє жодних RC-команд.
+  // TX16S: підтверджена схема цього борта.
+  // SA=CH7, SB=CH8 — VTX; SC=CH15 + SF=CH10 — система скиду;
+  // SD=CH13 + SH=CH6 — EMERGENCY STOP; LS=CH12; RS=CH9.
+  // Аналіз лише читає RC_CHANNELS і не відправляє команди на борт.
+  function timelineSeconds(t){
+    const m=String(t||'').match(/(-?)(\d+):(\d+(?:\.\d+)?)/);
+    if(!m)return null;
+    const v=(+m[2])*60+(+m[3]);
+    return m[1]==='-'?-v:v;
+  }
+
   function buildTx16ActivationAlerts(timeline){
     const rows=Array.isArray(timeline)?timeline:[];
-    const sfEvents=[];
-    const shEvents=[];
-    let prevSf=null;
-    let prevSh=null;
+    const dropEvents=[];
+    const emergencyEvents=[];
+    const emergencyBlocked=[];
+    let prevSf=null, prevSh=null;
+    let shStart=null;
 
-    rows.forEach(row=>{
+    rows.forEach((row,idx)=>{
       if(!row)return;
-      const sc=rcPwmValue(row,7);
-      const sd=rcPwmValue(row,8);
+      const sc=rcPwmValue(row,15);
+      const sd=rcPwmValue(row,13);
       const sf=tx16HighActive(rcPwmValue(row,10));
       const sh=tx16HighActive(rcPwmValue(row,6));
+      const scState=tx16ThreePosHuman(sc);
+      const sdState=tx16ThreePosHuman(sd);
 
-      // Перший валідний стан лише запам'ятовуємо; подія — саме зміна у активний стан.
       if(sf!==null){
         if(prevSf===false && sf===true){
-          sfEvents.push({
-            time:row.time||'',
-            selector:tx16ThreePosHuman(sc),
-            pwm:rcPwmValue(row,10)
-          });
+          dropEvents.push({time:row.time||'',selector:scState,pwm:rcPwmValue(row,10)});
         }
         prevSf=sf;
       }
 
       if(sh!==null){
         if(prevSh===false && sh===true){
-          shEvents.push({
-            time:row.time||'',
-            selector:tx16ThreePosHuman(sd),
-            pwm:rcPwmValue(row,6)
-          });
+          if(sdState==='ДО СЕБЕ'){
+            shStart={time:row.time||'',seconds:timelineSeconds(row.time),pwm:rcPwmValue(row,6)};
+          }else{
+            emergencyBlocked.push({time:row.time||'',selector:sdState,pwm:rcPwmValue(row,6)});
+          }
+        }
+        if(prevSh===true && sh===false && shStart){
+          const endSec=timelineSeconds(row.time);
+          const duration=(shStart.seconds!==null&&endSec!==null)?Math.max(0,endSec-shStart.seconds):null;
+          emergencyEvents.push({time:shStart.time,endTime:row.time||'',duration,pwm:shStart.pwm});
+          shStart=null;
         }
         prevSh=sh;
+      }
+
+      if(idx===rows.length-1 && shStart){
+        const endSec=timelineSeconds(row.time);
+        const duration=(shStart.seconds!==null&&endSec!==null)?Math.max(0,endSec-shStart.seconds):null;
+        emergencyEvents.push({time:shStart.time,endTime:row.time||'',duration,pwm:shStart.pwm});
+        shStart=null;
       }
     });
 
     const out=[];
-
-    if(sfEvents.length){
-      sfEvents.forEach((ev,i)=>{
-        const n=sfEvents.length>1?` №${i+1}`:'';
-        out.push(
-          `<span class="ai-jump" data-jump-time="${ev.time}">`+
-          `🎚 <b>SC + SF — активація${n}:</b> ${ev.time}; `+
-          `SC: ${ev.selector}; SF: УВІМКНЕНО`+
-          `${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. `+
-          `Натисніть, щоб перейти до цього рядка Timeline.`+
-          `</span>`
-        );
+    if(dropEvents.length){
+      dropEvents.forEach((ev,i)=>{
+        const n=dropEvents.length>1?` №${i+1}`:'';
+        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🎚 <b>СКИД${n} — SC + SF:</b> ${ev.time}; SC (запобіжник): ${ev.selector}; SF (активатор): УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Натисніть, щоб перейти до Timeline.</span>`);
       });
+      const kind=dropEvents.length===1?'ОДИНОЧНИЙ СКИД':`ПОДВІЙНИЙ / ПОВТОРНИЙ СКИД (${dropEvents.length} активації)`;
+      out.push(`🎚 <b>Підсумок системи скиду:</b> ${kind}.`);
     }else{
-      out.push('🎚 <b>SC + SF:</b> активацій SF у TLOG не зафіксовано.');
+      out.push('🎚 <b>SC + SF:</b> активацій системи скиду у TLOG не зафіксовано.');
     }
 
-    if(shEvents.length){
-      shEvents.forEach((ev,i)=>{
-        const n=shEvents.length>1?` №${i+1}`:'';
-        out.push(
-          `<span class="ai-jump" data-jump-time="${ev.time}">`+
-          `🛑 <b>SD + SH — активація${n}:</b> ${ev.time}; `+
-          `SD: ${ev.selector}; SH: НАТИСНУТО`+
-          `${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. `+
-          `Натисніть, щоб перейти до цього рядка Timeline.`+
-          `</span>`
-        );
+    if(emergencyEvents.length){
+      emergencyEvents.forEach((ev,i)=>{
+        const n=emergencyEvents.length>1?` №${i+1}`:'';
+        const d=typeof ev.duration==='number'?`${ev.duration.toFixed(2)} с`:'невідомо';
+        const ten=(typeof ev.duration==='number'&&ev.duration>=9.8)?' • утримано приблизно 10 с':'';
+        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🛑 <b>EMERGENCY STOP${n} — команда активатора:</b> ${ev.time}; SD: ДО СЕБЕ (запобіжник дозволив); SH утримувався ${d}${ten}. Натисніть, щоб перейти до Timeline.</span>`);
       });
     }else{
-      out.push('🛑 <b>SD + SH:</b> натискань SH у TLOG не зафіксовано.');
+      out.push('🛑 <b>EMERGENCY STOP:</b> валідної активації SD=ДО СЕБЕ + SH не зафіксовано.');
     }
-
+    emergencyBlocked.forEach(ev=>{
+      out.push(`⚠️ <b>SH натиснуто без дозволу Emergency Stop:</b> ${ev.time}; SD: ${ev.selector}. Як Emergency Stop не зараховано.`);
+    });
     return out;
   }
 
@@ -1458,19 +1467,13 @@ function renderResults(data){
     return `${x.state||'—'} • ${pwm}<br><span style="font-size:11px;color:#64748b">діапазон: ${range}</span>`;
   };
 
-  // FC/FS are derived only from already returned Timeline RC_CHANNELS,
-  // so backend calculations and previous analysis results stay identical.
   const timelineRows=Array.isArray(data.timeline)?data.timeline:[];
   const collectChannel=(ch)=>{
-    const vals=timelineRows
-      .map(r=>rcPwmValue(r,ch))
-      .filter(v=>typeof v==='number'&&Number.isFinite(v));
+    const vals=timelineRows.map(r=>rcPwmValue(r,ch)).filter(v=>typeof v==='number'&&Number.isFinite(v));
     if(!vals.length)return {last:null,min:null,max:null};
     return {last:vals[vals.length-1],min:Math.min(...vals),max:Math.max(...vals)};
   };
-  const fcUi=collectChannel(15);
-  const fsUi=collectChannel(11);
-  const uiSwitchSummary=(label,obj,stateFn)=>{
+  const uiSwitchSummary=(obj,stateFn)=>{
     if(obj.last===null)return '—';
     return `${stateFn(obj.last)} • ${Math.round(obj.last)} us<br><span style="font-size:11px;color:#64748b">діапазон: ${Math.round(obj.min)}–${Math.round(obj.max)} us</span>`;
   };
@@ -1480,23 +1483,21 @@ function renderResults(data){
     ${createCard('CH2 Pitch',data.radioChannels?.ch2||'—')}
     ${createCard('CH3 Throttle',data.radioChannels?.ch3||'—')}
     ${createCard('CH4 Yaw',data.radioChannels?.ch4||'—')}
-    ${createCard('SH — CH6',switchSummary('SH',data.radioChannels?.ch6),'Поточний стан + PWM; зміни є в Timeline')}
-    ${createCard('SC — CH7',switchSummary('SC',data.radioChannels?.ch7),'3-позиційний: поточна позиція + PWM; зміни є в Timeline')}
-    ${createCard('SD — CH8',switchSummary('SD',data.radioChannels?.ch8),'3-позиційний: поточна позиція + PWM; зміни є в Timeline')}
-    ${createCard('SF — CH10',switchSummary('SF',data.radioChannels?.ch10),'2-позиційний: OFF / ON + PWM; зміни є в Timeline')}
-    ${createCard('FC — CH15',uiSwitchSummary('FC',fcUi,tx16FcHuman),'UI-only: підтверджений канал CH15; розрахунки не змінюються')}
-    ${createCard('FS — CH11',uiSwitchSummary('FS',fsUi,tx16FsHuman),'UI-only: підтверджений канал CH11; розрахунки не змінюються')}
+    ${createCard('SA — CH7',uiSwitchSummary(collectChannel(7),p=>`5.${tx16ThreePos(p)===1?'2':tx16ThreePos(p)===2?'5':'8'} GHz`),'Вибір діапазону VTX: 5.2 / 5.5 / 5.8 GHz')}
+    ${createCard('SB — CH8',uiSwitchSummary(collectChannel(8),p=>`K${tx16ThreePos(p)||'—'}`),'Вибір відеоканалу K1 / K2 / K3')}
+    ${createCard('SC — CH15',uiSwitchSummary(collectChannel(15),tx16ThreePosHuman),'Запобіжник системи скиду; працює у зв’язці з SF')}
+    ${createCard('SF — CH10',uiSwitchSummary(collectChannel(10),p=>tx16TwoPosHuman(p,false)),'Активатор системи скиду; аналізується разом із SC')}
+    ${createCard('SD — CH13',uiSwitchSummary(collectChannel(13),tx16ThreePosHuman),'3-позиційний запобіжник EMERGENCY STOP; дозвіл лише ДО СЕБЕ')}
+    ${createCard('SH — CH6',uiSwitchSummary(collectChannel(6),p=>tx16TwoPosHuman(p,true)),'Активатор EMERGENCY STOP; враховується лише при SD=ДО СЕБЕ')}
+    ${createCard('LS — CH12',uiSwitchSummary(collectChannel(12),tx16ThreePosHuman),'Кут нахилу камери')}
+    ${createCard('RS — CH9',uiSwitchSummary(collectChannel(9),tx16ThreePosHuman),'Zoom камери: + / нейтраль / −')}
     ${createCard(
       'Радіокалібрування',
-      data.flight?.radioCalibration?.detected
-        ?`ВИЯВЛЕНО • ${data.flight.radioCalibration.confidence??0}%`
-        :'Не виявлено',
-      data.flight?.radioCalibration?.detected
-        ?`CH: ${(data.flight.radioCalibration.fullRangeChannels||[]).map(x=>'CH'+x).join(', ')||'—'} • переходів: ${data.flight.radioCalibration.transitionCount??0}`
-        :'Автоматична перевірка проходження CH1–CH4 через MIN/CENTER/MAX'
+      data.flight?.radioCalibration?.detected ? `ВИЯВЛЕНО • ${data.flight.radioCalibration.confidence??0}%` : 'Не виявлено',
+      data.flight?.radioCalibration?.detected ? `CH: ${(data.flight.radioCalibration.fullRangeChannels||[]).map(x=>'CH'+x).join(', ')||'—'} • переходів: ${data.flight.radioCalibration.transitionCount??0}` : 'Автоматична перевірка проходження CH1–CH4 через MIN/CENTER/MAX'
     )}
 
-  `;
+  `;;
 
   renderTimelineTable(data.timeline,'timelineContainer');
   bindAiTimelineJumps();
@@ -1747,55 +1748,26 @@ function tx16HighActive(pwm){
 }
 
 function renderTx16Switches(item){
-  const sc=rcPwmValue(item,7);
-  const sd=rcPwmValue(item,8);
-  const sf=rcPwmValue(item,10);
-  const sh=rcPwmValue(item,6);
-  const fc=rcPwmValue(item,15);
-  const fs=rcPwmValue(item,11);
-  const scPos=tx16ThreePos(sc);
-  const sdPos=tx16ThreePos(sd);
-  const sfOn=tx16HighActive(sf);
-  const shOn=tx16HighActive(sh);
-  const fcText=tx16FcHuman(fc);
-  const fsText=tx16FsHuman(fs);
+  const sa=rcPwmValue(item,7), sb=rcPwmValue(item,8);
+  const sc=rcPwmValue(item,15), sf=rcPwmValue(item,10);
+  const sd=rcPwmValue(item,13), sh=rcPwmValue(item,6);
+  const ls=rcPwmValue(item,12), rs=rcPwmValue(item,9);
+  const sfOn=tx16HighActive(sf), shOn=tx16HighActive(sh);
+  const sdArmed=tx16ThreePos(sd)===3;
   const pwm=v=>v===null?'—':`${Math.round(v)} us`;
-
-  const scText=scPos===1?'1 — SAFETY':scPos===2?'2 — ПРАВИЙ':scPos===3?'3 — ЛІВИЙ':'—';
-  const sdText=sdPos===1?'1 — SAFETY':sdPos===2?'2 — СЕРЕДНЄ':sdPos===3?'3 — EMERGENCY ДОЗВІЛ':'—';
-  const sfText=sfOn===true?'ON / АКТИВНИЙ':sfOn===false?'OFF':'ПЕРЕХІДНА ЗОНА';
-  const shText=shOn===true?'STOP АКТИВНИЙ':shOn===false?'НЕ НАТИСНУТО':'ПЕРЕХІДНА ЗОНА';
-
-  return `
-    <div class="switches-wrap">
-      <div class="switches-title">🎚 TX16S — SC / SD / SF / SH / FC / FS</div>
-      <div class="switches-grid">
-        <div class="switch-card">
-          <div class="switch-name">SC</div><div class="switch-channel">CH7 • ${pwm(sc)}</div>
-          <div class="switch-state ${scPos===2||scPos===3?'switch-active':'switch-safe'}"><b>${scText}</b></div>
-        </div>
-        <div class="switch-card">
-          <div class="switch-name">SD</div><div class="switch-channel">CH8 • ${pwm(sd)}</div>
-          <div class="switch-state ${sdPos===3?'switch-active':'switch-safe'}"><b>${sdText}</b></div>
-        </div>
-        <div class="switch-card">
-          <div class="switch-name">SF</div><div class="switch-channel">CH10 • ${pwm(sf)}</div>
-          <div class="switch-state ${sfOn===true?'switch-active':''}"><b>${sfText}</b></div>
-        </div>
-        <div class="switch-card">
-          <div class="switch-name">SH</div><div class="switch-channel">CH6 • ${pwm(sh)}</div>
-          <div class="switch-state ${shOn===true?'switch-stop':''}"><b>${shText}</b></div>
-        </div>
-        <div class="switch-card">
-          <div class="switch-name">FC</div><div class="switch-channel">CH15 • ${pwm(fc)}</div>
-          <div class="switch-state ${fcText==='ДО СЕБЕ'?'switch-active':'switch-safe'}"><b>${fcText}</b></div>
-        </div>
-        <div class="switch-card">
-          <div class="switch-name">FS</div><div class="switch-channel">CH11 • ${pwm(fs)}</div>
-          <div class="switch-state ${fsText==='АКТИВОВАНО'?'switch-active':'switch-safe'}"><b>${fsText}</b></div>
-        </div>
-      </div>
-    </div>`;
+  const card=(name,ch,state,cls='')=>`<div class="switch-card"><div class="switch-name">${name}</div><div class="switch-channel">CH${ch} • ${pwm(rcPwmValue(item,ch))}</div><div class="switch-state ${cls}"><b>${state}</b></div></div>`;
+  const band=tx16ThreePos(sa); const bandText=band===1?'5.2 GHz':band===2?'5.5 GHz':band===3?'5.8 GHz':'—';
+  const sbPos=tx16ThreePos(sb); const sbText=sbPos?`K${sbPos}`:'—';
+  return `<div class="switches-wrap">
+    <div class="switches-title">🎚 TX16S — SA / SB / SC / SF / SD / SH / LS / RS</div>
+    <div class="switches-grid">
+      ${card('SA',7,bandText)}${card('SB',8,sbText)}
+      ${card('SC',15,tx16ThreePosHuman(sc),tx16ThreePos(sc)===3?'switch-active':'switch-safe')}
+      ${card('SF',10,sfOn===true?'АКТИВАТОР ON':sfOn===false?'OFF':'ПЕРЕХІДНА ЗОНА',sfOn===true?'switch-active':'')}
+      ${card('SD',13,`${tx16ThreePosHuman(sd)}${sdArmed?' • E-STOP ARMED':''}`,sdArmed?'switch-stop':'switch-safe')}
+      ${card('SH',6,shOn===true?'EMERGENCY ACTIVATOR':shOn===false?'НЕ НАТИСНУТО':'ПЕРЕХІДНА ЗОНА',shOn===true&&sdArmed?'switch-stop':'')}
+      ${card('LS',12,tx16ThreePosHuman(ls))}${card('RS',9,tx16ThreePosHuman(rs))}
+    </div></div>`;
 }
 
 function stickDotPosition(horizontalPct,verticalPct){
@@ -1856,7 +1828,7 @@ function renderTimelineSticks(item){
       </div>
     </div>
     ${renderTx16Switches(item)}
-    <div class="sticks-note">FC=CH15 та FS=CH11 додані лише як відображення RC_CHANNELS. Старий аналіз, AI-висновки, дальність, VTX, LINK LOSS та інші розрахунки не змінюються.</div>
+    <div class="sticks-note">SA/SB керують VTX; SC+SF — система скиду; SD+SH — EMERGENCY STOP; LS/RS — камера. Аналіз лише читає RC_CHANNELS.</div>
     <div class="sticks-note">Відсоток = відхилення від 1500 us до приблизних меж 1000/2000 us. Це команда пілота, а не фактичний кут або потужність моторів.</div>
   `;
 }
@@ -1877,49 +1849,24 @@ function tx16TwoPosHuman(pwm, isMomentary=false){
   return active?'УВІМКНЕНО':'ВИМКНЕНО';
 }
 
-// TX16S UI-only extension.
-// Підтверджені тестом канали:
-// FC -> CH15
-// FS -> CH11
-// Ця логіка НЕ змінює backend, AI, Timeline-дані, дальність, VTX,
-// радіоаналіз або будь-які попередні розрахунки.
-function tx16FcHuman(pwm){
-  const pos=tx16ThreePos(pwm);
-  if(pos===1)return 'ВІД СЕБЕ';
-  if(pos===2)return 'СЕРЕДИНА';
-  if(pos===3)return 'ДО СЕБЕ';
-  return '—';
-}
-
-function tx16FsHuman(pwm){
-  const pos=tx16ThreePos(pwm);
-  if(pos===1)return 'АКТИВОВАНО';
-  if(pos===2)return 'ДЕАКТИВОВАНО';
-  if(pos===3)return 'АКТИВОВАНО';
-  return '—';
-}
-
+// Підтверджений/уточнений мапінг TX16S для цього борта.
 function tx16StateRaw(item){
   return {
-    sc:rcPwmValue(item,7),
-    sd:rcPwmValue(item,8),
-    sf:rcPwmValue(item,10),
-    sh:rcPwmValue(item,6),
-    fc:rcPwmValue(item,15),
-    fs:rcPwmValue(item,11)
+    sa:rcPwmValue(item,7), sb:rcPwmValue(item,8),
+    sc:rcPwmValue(item,15), sf:rcPwmValue(item,10),
+    sd:rcPwmValue(item,13), sh:rcPwmValue(item,6),
+    ls:rcPwmValue(item,12), rs:rcPwmValue(item,9)
   };
 }
-
 function tx16NormalizedState(item){
   const r=tx16StateRaw(item);
+  const saPos=tx16ThreePos(r.sa), sbPos=tx16ThreePos(r.sb);
   return {
-    sc:tx16ThreePosHuman(r.sc),
-    sd:tx16ThreePosHuman(r.sd),
-    sf:tx16TwoPosHuman(r.sf,false),
-    sh:tx16TwoPosHuman(r.sh,true),
-    fc:tx16FcHuman(r.fc),
-    fs:tx16FsHuman(r.fs),
-    raw:r
+    sa:saPos===1?'5.2 GHz':saPos===2?'5.5 GHz':saPos===3?'5.8 GHz':'—',
+    sb:sbPos?`K${sbPos}`:'—',
+    sc:tx16ThreePosHuman(r.sc), sf:tx16TwoPosHuman(r.sf,false),
+    sd:tx16ThreePosHuman(r.sd), sh:tx16TwoPosHuman(r.sh,true),
+    ls:tx16ThreePosHuman(r.ls), rs:tx16ThreePosHuman(r.rs), raw:r
   };
 }
 
@@ -1940,9 +1887,8 @@ function renderTx16TimelineSummary(item,prevItem){
   };
 
   const sfActive=cur.sf==='УВІМКНЕНО'?'active':'';
-  const shActive=cur.sh==='НАТИСНУТО'?'stop':'';
-  const fsActive=cur.fs==='АКТИВОВАНО'?'active':'';
-  return `<div class="tl-tx16s">${chip('SC','sc')}${chip('SD','sd')}${chip('SF','sf',sfActive)}${chip('SH','sh',shActive)}${chip('FC','fc')}${chip('FS','fs',fsActive)}</div>`;
+  const shActive=(cur.sh==='НАТИСНУТО'&&cur.sd==='ДО СЕБЕ')?'stop':'';
+  return `<div class="tl-tx16s">${chip('SA','sa')}${chip('SB','sb')}${chip('SC','sc')}${chip('SF','sf',sfActive)}${chip('SD','sd')}${chip('SH','sh',shActive)}${chip('LS','ls')}${chip('RS','rs')}</div>`;
 }
 
 
@@ -1997,7 +1943,7 @@ function renderTimelineTable(items,containerId){
       <div>Темп. FC / ESC</div>
       <div>Запис / повідомлення</div>
       <div>Аналіз</div>
-      <div>TX16S — SC / SD / SF / SH</div>
+      <div>TX16S — SA / SB / SC / SF / SD / SH / LS / RS</div>
       <div>Дія пілота</div>
     </div>
   `;
