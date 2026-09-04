@@ -64,7 +64,7 @@ class Tx16UiContractTests(unittest.TestCase):
     def test_sd_sh_are_emergency_stop_not_single_drop(self):
         self.assertIn("EMERGENCY STOP", HTML)
         self.assertIn("function tx16EmergencyStopSafetyState", HTML)
-        self.assertIn("sd:tx16EmergencyStopSafetyState(r.sd)", HTML)
+        self.assertIn("sd:tx16EmergencyStopEmergencyStopSafetyState(r.sd)", HTML) if False else self.assertIn("sd:tx16EmergencyStopSafetyState(r.sd)", HTML)
         self.assertIn("if(prevSh===false && sh===true && sdPos===3)", HTML)
         self.assertIn("EMERGENCY STOP АКТИВОВАНО", HTML)
         self.assertNotIn("ОДИНОЧНИЙ СКИД — SD + SH", HTML)
@@ -85,6 +85,13 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn(".tx16-chip.rf-control", HTML)
         self.assertIn("#7dd3fc", HTML)
         self.assertIn("#38bdf8", HTML)
+
+    def test_large_sa_sb_cards_use_blue_highlight_and_sb_real_frequency(self):
+        self.assertIn(".switch-card.rf-control", HTML)
+        self.assertIn("card('SA',7,bandText,'rf-control')", HTML)
+        self.assertIn("card('SB',8,sbText,'rf-control')", HTML)
+        self.assertIn("const sbText=sbPos?`${tx16VtxFrequency(band,sbPos)} MHz`:'—';", HTML)
+        self.assertNotIn("const sbText=sbPos?`K${sbPos}`:'—';", HTML)
 
     def test_sb_timeline_chip_includes_vtx_frequency_from_sa_sb_matrix(self):
         self.assertIn("function tx16VtxFrequency", HTML)
