@@ -20,12 +20,9 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertNotIn("FC — CH15", HTML)
         self.assertNotIn("FS — CH11", HTML)
 
-    def test_drop_system_type_selector_is_explicit(self):
-        self.assertIn('id="dropSystemType"', HTML)
-        self.assertIn('value="dual"', HTML)
-        self.assertIn('value="single"', HTML)
-        self.assertIn('ПОДВІЙНА', HTML)
-        self.assertIn('ОДИНОЧНА', HTML)
+    def test_drop_system_selector_is_removed(self):
+        self.assertNotIn('id="dropSystemType"', HTML)
+        self.assertNotIn('name="dropSystemType"', HTML)
 
     def test_dual_drop_sc_states_are_named_by_safety_function(self):
         self.assertIn("function tx16DualDropSafetyState", HTML)
@@ -37,12 +34,20 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn("function tx16SingleDropSafetyState", HTML)
         self.assertIn("if(pos===1||pos===2)return 'ЗАПОБІЖНИК АКТИВОВАНИЙ';", HTML)
         self.assertIn("if(pos===3)return 'ЗНЯТО З ЗАПОБІЖНИКА';", HTML)
-        self.assertIn("function tx16DropSafetyState", HTML)
-        self.assertIn("dropSystemType==='single'", HTML)
 
-    def test_drop_activation_uses_selected_system_type(self):
-        self.assertIn("buildTx16ActivationAlerts(data.timeline,dropSystemType)", HTML)
-        self.assertIn("if(dropSystemType==='single')", HTML)
+    def test_drop_system_type_is_inferred_from_sc_sf_usage(self):
+        self.assertIn("function inferDropSystemType", HTML)
+        self.assertIn("middleSfActivations", HTML)
+        self.assertIn("towardSfActivations", HTML)
+        self.assertIn("type:'dual'", HTML)
+        self.assertIn("type:'single'", HTML)
+        self.assertIn("type:'unknown'", HTML)
+        self.assertIn("ЙМОВІРНИЙ ТИП СИСТЕМИ СКИДУ", HTML)
+        self.assertIn("ТИП СИСТЕМИ СКИДУ НЕМОЖЛИВО ВИЗНАЧИТИ ОДНОЗНАЧНО", HTML)
+
+    def test_drop_activation_uses_inferred_system_type(self):
+        self.assertIn("const inferredDropSystem=inferDropSystemType(rows);", HTML)
+        self.assertIn("if(inferredDropSystem.type==='single')", HTML)
         self.assertIn("if(scPos===3)", HTML)
         self.assertIn("ОДИНОЧНИЙ СКИД", HTML)
         self.assertIn("if(scPos===2||scPos===3)", HTML)
