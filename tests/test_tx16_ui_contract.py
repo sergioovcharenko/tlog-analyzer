@@ -96,10 +96,10 @@ class Tx16UiContractTests(unittest.TestCase):
     def test_large_drop_and_emergency_cards_match_timeline_colors(self):
         self.assertIn(".switch-card.drop-control", HTML)
         self.assertIn(".switch-card.emergency-control", HTML)
-        self.assertIn("'switch-stop','drop-control')", HTML)
-        self.assertIn("'switch-safe','drop-control')", HTML)
-        self.assertIn("'switch-active','emergency-control')", HTML)
-        self.assertIn("'switch-safe','emergency-control')", HTML)
+        self.assertIn("scPos===1?'switch-safe':'switch-stop','drop-control'", HTML)
+        self.assertIn("sfOn===true?'switch-stop':'switch-safe','drop-control'", HTML)
+        self.assertIn("sdPos===3?'switch-active':'switch-safe','emergency-control'", HTML)
+        self.assertIn("shOn===true&&sdPos===3?'switch-active':'switch-safe','emergency-control'", HTML)
 
     def test_sb_timeline_chip_includes_vtx_frequency_from_sa_sb_matrix(self):
         self.assertIn("function tx16VtxFrequency", HTML)
