@@ -47,3 +47,5 @@ jobs:
           git add index.html
           git commit -m 'feat: highlight SA and SB in blue'
           git push
+
+# red-check: large SA/SB cards must be blue and SB must show MHz
