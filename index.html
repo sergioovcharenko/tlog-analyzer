@@ -1090,10 +1090,7 @@ UI.btn.addEventListener('click',async()=>{
   UI.progress.style.display='block';
 
   try{
-    updateProgress(10,'Пробудження сервера...');
-    await pingServerAsync();
-
-    updateProgress(35,'Передача TLOG на сервер...');
+    updateProgress(15,'Підключення та передача TLOG...');
     const result=await analyzeOnServer(selectedFile);
 
     if(!result||result.success===false){
@@ -1115,21 +1112,6 @@ UI.btn.addEventListener('click',async()=>{
     UI.btn.textContent='🚀 ПОВТОРИТИ АНАЛІЗ';
   }
 });
-
-async function pingServerAsync(){
-  try{
-    const response=await fetch(API_BASE_URL+'/health',{
-      method:'GET',
-      cache:'no-store'
-    });
-    if(!response.ok){
-      throw new Error('HTTP '+response.status);
-    }
-    return true;
-  }catch(error){
-    throw new Error('Не вдалося підключитися до Python API: '+(error?.message||error));
-  }
-}
 
 async function analyzeOnServer(file){
   const controller=new AbortController();
