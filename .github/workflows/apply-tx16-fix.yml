@@ -19,7 +19,7 @@ jobs:
         run: python tools/apply_tx16_fix.py
 
       - name: Run TX16 contract tests
-        run: python -m pytest -q tests/test_tx16_ui_contract.py
+        run: python -m unittest discover -s tests -p 'test_tx16_ui_contract.py' -v
 
       - name: Check embedded JavaScript syntax
         run: |
