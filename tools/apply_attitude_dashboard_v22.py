@@ -13,6 +13,18 @@ html = html.replace(
     1,
 )
 
+# 1b) The upper roll marker must move around the fixed bank scale.
+html = html.replace(
+    '<div class="attitude-roll-pointer" aria-hidden="true"></div>',
+    '<div id="attitudeRollPointer" class="attitude-roll-pointer" aria-hidden="true"></div>',
+    1,
+)
+html = html.replace(
+    '.attitude-roll-pointer{position:absolute;left:50%;top:7px;z-index:7;width:0;height:0;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:0;border-bottom:13px solid #facc15;filter:drop-shadow(0 1px 2px #000);pointer-events:none}',
+    '.attitude-roll-pointer{position:absolute;left:50%;top:50%;z-index:7;width:0;height:0;transform:translate(-50%,-50%) rotate(0deg) translateY(-112px);transform-origin:0 0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:13px solid #facc15;border-bottom:0;filter:drop-shadow(0 1px 2px #000);pointer-events:none;will-change:transform}',
+    1,
+)
+
 # 2) Add compact RSSI/dBm cards above the horizon.
 if 'id="attitudeRssi"' not in html:
     anchor = '        <div id="attitudeHorizon" aria-label="Авіагоризонт з шкалою крену і тангажу">'
@@ -62,6 +74,7 @@ if start < 0 or end < 0:
 new_fn = r'''function updateAttitudeAtTime(timeMs){
   const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
   const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
+  const pointer=document.getElementById('attitudeRollPointer');
   const rssiEl=document.getElementById('attitudeRssi'),dbmEl=document.getElementById('attitudeDbm');
   const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
@@ -70,10 +83,12 @@ new_fn = r'''function updateAttitudeAtTime(timeMs){
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
     if(scene)scene.style.transform='translate(-50%,-50%)';
+    if(pointer)pointer.style.transform='translate(-50%,-50%) rotate(0deg) translateY(-112px)';
     return;
   }
   const roll=Number(d.roll_deg?.[idx]),pitch=Number(d.pitch_deg?.[idx]),yaw=Number(d.yaw_deg?.[idx]);
   if(scene&&Number.isFinite(roll)&&Number.isFinite(pitch)){const py=Math.max(-90,Math.min(90,pitch))*2.2;scene.style.transform=`translate(-50%,calc(-50% + ${py}px)) rotate(${-roll}deg)`;}
+  if(pointer&&Number.isFinite(roll))pointer.style.transform=`translate(-50%,-50%) rotate(${roll}deg) translateY(-112px)`;
   const alt=sample('altitude_time_ms','altitude_m');
   const voltage=sample('voltage_time_ms','voltage_v');
   const fcTemp=sample('fc_temp_time_ms','fc_temp_c');
@@ -107,4 +122,4 @@ if 'append_pair("rssi_time_ms", "rssi_pct"' not in backend:
 
 html_path.write_text(html, encoding="utf-8")
 backend_path.write_text(backend, encoding="utf-8")
-print("Applied attitude dashboard v2.2: green ground, RSSI/dBm, FC temp, current and Engine Load")
+print("Applied attitude dashboard v2.2: green ground, moving roll pointer, RSSI/dBm, FC temp, current and Engine Load")
