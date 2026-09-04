@@ -43,3 +43,5 @@ jobs:
           git add index.html
           git commit -m 'feat: map TX16 controls and analyze emergency stop'
           git push
+
+# one-time migration workflow; remove after successful commit
