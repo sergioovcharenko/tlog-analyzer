@@ -1,0 +1,66 @@
+name: Graph attitude viewer
+
+on:
+  push:
+    branches: [graph-attitude-work]
+    paths:
+      - 'tools/apply_graph_attitude_viewer.py'
+      - 'tests/test_graph_data_contract.py'
+      - 'tests/test_graph_viewer_ui_contract.py'
+      - '.github/workflows/graph-attitude-viewer.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Apply graph and attitude viewer patch
+        run: python tools/apply_graph_attitude_viewer.py
+
+      - name: Check backend syntax
+        run: python -m py_compile backend/main.py
+
+      - name: Run graph data contract
+        run: python -m unittest tests.test_graph_data_contract -v
+
+      - name: Run graph viewer UI contract
+        run: python -m unittest tests.test_graph_viewer_ui_contract -v
+
+      - name: Run full regression suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>')
+          b=s.find('</script>',a)
+          if a < 0 or b < 0:
+              raise SystemExit('embedded script not found')
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+
+      - name: Commit patched application
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo 'No application changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/main.py index.html
+          git commit -m 'feat: add telemetry graph and attitude viewer'
+          git push
