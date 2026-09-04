@@ -1,0 +1,21 @@
+name: Engine load contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/engine-load-contract.yml'
+      - 'tests/test_engine_load_contract.py'
+      - 'backend/main.py'
+      - 'index.html'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run engine load contract
+        run: python -m unittest tests.test_engine_load_contract -v
