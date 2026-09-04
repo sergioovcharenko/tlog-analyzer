@@ -64,7 +64,7 @@ class Tx16UiContractTests(unittest.TestCase):
     def test_sd_sh_are_emergency_stop_not_single_drop(self):
         self.assertIn("EMERGENCY STOP", HTML)
         self.assertIn("function tx16EmergencyStopSafetyState", HTML)
-        self.assertIn("sd:tx16EmergencyStopEmergencyStopSafetyState(r.sd)", HTML) if False else self.assertIn("sd:tx16EmergencyStopSafetyState(r.sd)", HTML)
+        self.assertIn("sd:tx16EmergencyStopSafetyState(r.sd)", HTML)
         self.assertIn("if(prevSh===false && sh===true && sdPos===3)", HTML)
         self.assertIn("EMERGENCY STOP АКТИВОВАНО", HTML)
         self.assertNotIn("ОДИНОЧНИЙ СКИД — SD + SH", HTML)
