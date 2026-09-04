@@ -51,6 +51,18 @@ if '.attitude-radio-row{' not in html:
         raise SystemExit("attitude values CSS anchor not found")
     html = html.replace(css_anchor, css, 1)
 
+# Requested threshold colors for battery/current/FC temperature/Engine Load.
+if '.att-bat-green .att-main' not in html:
+    css_anchor = '.attitude-value.att-fc .att-main{color:#38bdf8}.attitude-value.att-current .att-main{color:#fb7185}.attitude-value.att-engine .att-main{color:#facc15}'
+    threshold_css = '''.attitude-value.att-fc .att-main,.attitude-value.att-current .att-main{color:#f8fafc}
+.att-bat-green .att-main{color:#22c55e!important}.att-bat-orange .att-main{color:#f59e0b!important}.att-bat-red .att-main{color:#ef4444!important}
+.att-current-red .att-main{color:#ef4444!important}
+.att-fc-orange .att-main{color:#f59e0b!important}.att-fc-red .att-main{color:#ef4444!important}
+.att-engine-green .att-main{color:#22c55e!important}'''
+    if css_anchor not in html:
+        raise SystemExit("attitude threshold CSS anchor not found")
+    html = html.replace(css_anchor, css_anchor + '\n' + threshold_css, 1)
+
 # The older v2 nth-child emphasis assumes two columns; remove it for v2.2.
 html = html.replace(
     '.attitude-value:nth-child(1),.attitude-value:nth-child(2){font-size:16px;font-weight:900;border-color:#334e68}.attitude-value:nth-child(1) b,.attitude-value:nth-child(2) b{font-size:10px;letter-spacing:.08em}',
@@ -65,7 +77,31 @@ html = html.replace(
     1,
 )
 
-# 4) Replace attitude updater so every readout follows the selected graph time.
+# 4) Helpers for requested dashboard warning thresholds.
+helpers = r'''function attitudeBatClass(v){
+  if(!Number.isFinite(v))return '';
+  if(v>=20&&v<=25.2)return 'att-bat-green';
+  if(v>=18&&v<20)return 'att-bat-orange';
+  if(v<=17.99)return 'att-bat-red';
+  return '';
+}
+function attitudeCurrentClass(v){
+  return Number.isFinite(v)&&v>=80?'att-current-red':'';
+}
+function attitudeFcTempClass(v){
+  if(!Number.isFinite(v))return '';
+  if(v>=85)return 'att-fc-red';
+  if(v>=80&&v<85)return 'att-fc-orange';
+  return '';
+}
+'''
+if 'function attitudeBatClass(v)' not in html:
+    anchor = 'function updateAttitudeAtTime(timeMs){'
+    if anchor not in html:
+        raise SystemExit("attitude updater anchor not found")
+    html = html.replace(anchor, helpers + anchor, 1)
+
+# 5) Replace attitude updater so every readout follows the selected graph time.
 start = html.find('function updateAttitudeAtTime(timeMs){')
 end = html.find('\nfunction graphTimeFromClientX', start)
 if start < 0 or end < 0:
@@ -100,15 +136,15 @@ new_fn = r'''function updateAttitudeAtTime(timeMs){
     <div class="attitude-value"><b>YAW</b><span class="att-main">${Number.isFinite(yaw)?yaw.toFixed(1)+'°':'—'}</span></div>
     <div class="attitude-value"><b>ALT</b><span class="att-main">${alt===null?'—':alt.toFixed(1)+' м'}</span></div>
     <div class="attitude-value"><b>ЧАС</b><span class="att-main">${formatGraphTime(timeMs)}</span></div>
-    <div class="attitude-value"><b>BAT</b><span class="att-main">${voltage===null?'—':voltage.toFixed(1)+' V'}</span></div>
-    <div class="attitude-value att-fc"><b>ТЕМПЕРАТУРА FC</b><span class="att-main">${fcTemp===null?'—':fcTemp.toFixed(1)+' °C'}</span></div>
-    <div class="attitude-value att-current"><b>СПОЖИВАННЯ СТРУМУ</b><span class="att-main">${current===null?'—':current.toFixed(1)+' A'}</span></div>
-    <div class="attitude-value att-engine"><b>ENGINE LOAD</b><span class="att-main">${engineLoad===null?'—':engineLoad.toFixed(1)+' %'}</span></div>`;
+    <div class="attitude-value ${attitudeBatClass(voltage)}"><b>BAT</b><span class="att-main">${voltage===null?'—':voltage.toFixed(1)+' V'}</span></div>
+    <div class="attitude-value att-fc ${attitudeFcTempClass(fcTemp)}"><b>ТЕМПЕРАТУРА FC</b><span class="att-main">${fcTemp===null?'—':fcTemp.toFixed(1)+' °C'}</span></div>
+    <div class="attitude-value att-current ${attitudeCurrentClass(current)}"><b>CURRENT</b><span class="att-main">${current===null?'—':current.toFixed(1)+' A'}</span></div>
+    <div class="attitude-value att-engine att-engine-green"><b>ENGINE LOAD</b><span class="att-main">${engineLoad===null?'—':engineLoad.toFixed(1)+' %'}</span></div>`;
 }
 '''
 html = html[:start] + new_fn + html[end:]
 
-# 5) Backend: export existing snapshot RSSI and FC temperature into graph_data.
+# 6) Backend: export existing snapshot RSSI and FC temperature into graph_data.
 needle = '        append_pair("radio_time_ms", "radio_dbm", t_ms, row.get("dbm"))\n'
 addition = (
     '        append_pair("rssi_time_ms", "rssi_pct", t_ms, row.get("rssi"))\n'
@@ -122,4 +158,4 @@ if 'append_pair("rssi_time_ms", "rssi_pct"' not in backend:
 
 html_path.write_text(html, encoding="utf-8")
 backend_path.write_text(backend, encoding="utf-8")
-print("Applied attitude dashboard v2.2: green ground, moving roll pointer, RSSI/dBm, FC temp, current and Engine Load")
+print("Applied attitude dashboard v2.2: warning colors, green ground, moving roll pointer, RSSI/dBm, FC temp, Current and Engine Load")
