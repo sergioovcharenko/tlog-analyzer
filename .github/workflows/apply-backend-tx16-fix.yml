@@ -1,0 +1,37 @@
+name: Apply backend TX16 mapping
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-backend-tx16-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply backend mapping patch
+        run: python tools/apply_backend_tx16_fix.py
+
+      - name: Run backend mapping contract tests
+        run: python -m unittest discover -s tests -p 'test_backend_tx16_mapping.py' -v
+
+      - name: Compile backend
+        run: python -m py_compile backend/main.py
+
+      - name: Commit backend mapping
+        run: |
+          if git diff --quiet -- backend/main.py; then
+            echo 'No backend changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/main.py
+          git commit -m 'fix: align backend TX16 switch labels with tested channels'
+          git push
