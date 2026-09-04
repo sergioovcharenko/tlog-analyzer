@@ -5,13 +5,50 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/attention-summary.yml'
+      - 'tools/apply_attention_summary.py'
       - 'tests/test_attention_summary.py'
       - 'index.html'
+
+permissions:
+  contents: write
 
 jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply grouped attention summary patch
+        run: python tools/apply_attention_summary.py
       - name: Run attention summary contract
         run: python -m unittest tests/test_attention_summary.py -v
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          start=0
+          n=0
+          while True:
+            a=s.find('<script>', start)
+            if a<0: break
+            b=s.find('</script>', a)
+            if b<0: raise SystemExit('Unclosed script tag')
+            code=s[a+8:b]
+            if code.strip():
+              n+=1
+              Path(f'/tmp/app-{n}.js').write_text(code,encoding='utf-8')
+            start=b+9
+          print(n)
+          PY
+          for f in /tmp/app-*.js; do node --check "$f"; done
+      - name: Commit patched frontend
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No frontend changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: group attention alerts and highlight high current'
+          git push
