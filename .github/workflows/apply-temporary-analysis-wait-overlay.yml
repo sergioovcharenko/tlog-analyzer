@@ -1,0 +1,44 @@
+name: Apply temporary analysis wait overlay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-temporary-analysis-wait-overlay.yml'
+      - 'tools/apply_temporary_analysis_wait_overlay.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply temporary wait overlay patch
+        run: python tools/apply_temporary_analysis_wait_overlay.py
+      - name: Run frontend flow contract
+        run: python tests/test_frontend_flow.py
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>')
+          b=s.find('</script>',a)
+          if a < 0 or b < 0:
+              raise SystemExit('last embedded script not found')
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+      - name: Commit patched frontend
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index.html changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: show temporary wait image during TLOG analysis'
+          git push
