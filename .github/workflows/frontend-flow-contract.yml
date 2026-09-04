@@ -1,0 +1,20 @@
+name: Frontend flow contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/frontend-flow-contract.yml'
+      - 'tests/test_frontend_flow.py'
+      - 'index.html'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run frontend flow contract
+        run: python tests/test_frontend_flow.py
