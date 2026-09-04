@@ -1,0 +1,17 @@
+name: Attention summary contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/attention-summary.yml'
+      - 'tests/test_attention_summary.py'
+      - 'index.html'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run attention summary contract
+        run: python -m unittest tests/test_attention_summary.py -v
