@@ -199,6 +199,7 @@ body{
 .ai-list li.ai-clickable{cursor:pointer;border-radius:5px;padding:3px 6px;margin-left:-6px;transition:.15s}
 .ai-list li.ai-clickable:hover{background:rgba(59,130,246,.10);color:#bfdbfe}
 .ai-jump{display:inline-block;width:100%;cursor:pointer}
+.esc-fault-alert-bold{font-weight:800}
 .timeline{
   position:relative;
   background:var(--bg-card);
@@ -1450,7 +1451,7 @@ function buildEscPowertrainAlerts(timeline){
       if(firstConfirmed.confirmedByNonzeroRpm)evidence.push('аномалія підтверджена не лише нульовими RPM-пакетами');
 
       const text=`🔴 ЙМОВІРНА НЕСПРАВНІСТЬ MOTOR/ESC ${motor}: ${evidence.join('; ')}. Вперше помітно ${phase} (${firstAnomalyTime}), тривалість підтвердженої аномалії ≈ ${firstConfirmed.duration.toFixed(1)} с. Одиничний RPM=0 без стійкості/підтвердження струмом не вважається відмовою.`;
-      alerts.push(`<span class="ai-jump" data-jump-time="${firstAnomalyTime}">${text} Можливі причини: двигун, ESC, силове з'єднання або живлення; TLOG не встановлює конкретну фізичну причину. Натисніть, щоб перейти до Timeline.</span>`);
+      alerts.push(`<span class="ai-jump esc-fault-alert-bold" data-jump-time="${firstAnomalyTime}">${text} Можливі причини: двигун, ESC, силове з'єднання або живлення; TLOG не встановлює конкретну фізичну причину. Натисніть, щоб перейти до Timeline.</span>`);
       events.push({...firstConfirmed.firstRow,eventType:'ESC_POWERTRAIN_FAULT',analysisText:text,isError:true,systemText:firstConfirmed.firstRow?.systemText||''});
     }
   });
