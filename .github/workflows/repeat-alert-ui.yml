@@ -5,21 +5,15 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/repeat-alert-ui.yml'
-      - 'tools/apply_repeat_alert_ui.py'
       - 'tests/test_repeat_alert_ui.py'
       - 'index.html'
       - 'backend/main.py'
-
-permissions:
-  contents: write
 
 jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply repeat-only alert UI patch
-        run: python tools/apply_repeat_alert_ui.py
       - name: Run repeat alert UI contract
         run: python -m unittest tests/test_repeat_alert_ui.py -v
       - name: Check embedded JavaScript syntax
@@ -44,14 +38,3 @@ jobs:
           for f in /tmp/app-*.js; do node --check "$f"; done
       - name: Check backend syntax
         run: python -m py_compile backend/main.py
-      - name: Commit patched frontend and backend
-        run: |
-          if git diff --quiet -- index.html backend/main.py; then
-            echo 'No production changes to commit.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html backend/main.py
-          git commit -m 'fix: simplify alerts and label SA SB switches'
-          git push
