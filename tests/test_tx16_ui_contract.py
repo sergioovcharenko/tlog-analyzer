@@ -93,6 +93,14 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn("const sbText=sbPos?`${tx16VtxFrequency(band,sbPos)} MHz`:'—';", HTML)
         self.assertNotIn("const sbText=sbPos?`K${sbPos}`:'—';", HTML)
 
+    def test_large_drop_and_emergency_cards_match_timeline_colors(self):
+        self.assertIn(".switch-card.drop-control", HTML)
+        self.assertIn(".switch-card.emergency-control", HTML)
+        self.assertIn("card('SC',15,scText,'drop-control')", HTML)
+        self.assertIn("card('SF',10,sfText,'drop-control')", HTML)
+        self.assertIn("card('SD',13,sdText,'emergency-control')", HTML)
+        self.assertIn("card('SH',6,shText,'emergency-control')", HTML)
+
     def test_sb_timeline_chip_includes_vtx_frequency_from_sa_sb_matrix(self):
         self.assertIn("function tx16VtxFrequency", HTML)
         for freq in (5180, 5240, 5300, 5520, 5580, 5640, 5700, 5765, 5825):
