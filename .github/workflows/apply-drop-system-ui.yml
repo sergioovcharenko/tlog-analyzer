@@ -36,6 +36,7 @@ jobs:
 
       - name: Commit patched frontend
         run: |
+          # Re-run marker: contract updated for dynamic R/L labels.
           if git diff --quiet -- index.html; then
             echo 'No frontend changes to commit.'
             exit 0
