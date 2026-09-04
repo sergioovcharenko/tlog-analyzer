@@ -35,8 +35,8 @@ class Tx16UiContractTests(unittest.TestCase):
 
     def test_dual_drop_requires_sc_r_or_l_before_sf_rising_edge(self):
         self.assertIn("if(prevSf===false && sf===true && (scPos===2||scPos===3))", HTML)
-        self.assertIn("СКИД R", HTML)
-        self.assertIn("СКИД L", HTML)
+        self.assertIn("const side=scPos===2?'R':'L';", HTML)
+        self.assertIn("<b>СКИД ${ev.side}", HTML)
 
     def test_old_emergency_stop_semantics_are_removed(self):
         self.assertNotIn("EMERGENCY STOP", HTML)
