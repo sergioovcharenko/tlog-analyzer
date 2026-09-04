@@ -1,0 +1,47 @@
+name: Apply TX16 dual and single drop UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-drop-system-ui.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply TX16 drop-system patch
+        run: python tools/apply_drop_system_ui.py
+
+      - name: Run TX16 UI contract tests
+        run: python -m unittest tests.test_tx16_ui_contract -v
+
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>')
+          b=s.find('</script>',a)
+          if a < 0 or b < 0:
+              raise SystemExit('embedded script not found')
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+
+      - name: Commit patched frontend
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No frontend changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: model dual and single drop safety states'
+          git push
