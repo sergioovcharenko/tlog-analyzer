@@ -20,24 +20,34 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertNotIn("FC — CH15", HTML)
         self.assertNotIn("FS — CH11", HTML)
 
+    def test_drop_system_type_selector_is_explicit(self):
+        self.assertIn('id="dropSystemType"', HTML)
+        self.assertIn('value="dual"', HTML)
+        self.assertIn('value="single"', HTML)
+        self.assertIn('ПОДВІЙНА', HTML)
+        self.assertIn('ОДИНОЧНА', HTML)
+
     def test_dual_drop_sc_states_are_named_by_safety_function(self):
         self.assertIn("function tx16DualDropSafetyState", HTML)
         self.assertIn("ЗАПОБІЖНИК АКТИВОВАНИЙ", HTML)
         self.assertIn("ЗНЯТО З ЗАПОБІЖНИКА (R)", HTML)
         self.assertIn("ЗНЯТО З ЗАПОБІЖНИКА (L)", HTML)
-        self.assertIn("sc:tx16DualDropSafetyState(r.sc)", HTML)
 
-    def test_single_drop_sd_states_and_sh_activation(self):
+    def test_single_drop_sc_requires_toward_position(self):
         self.assertIn("function tx16SingleDropSafetyState", HTML)
-        self.assertIn("sd:tx16SingleDropSafetyState(r.sd)", HTML)
-        self.assertIn("if(prevSh===false && sh===true && sdPos===3)", HTML)
-        self.assertIn("ОДИНОЧНИЙ СКИД", HTML)
+        self.assertIn("if(pos===1||pos===2)return 'ЗАПОБІЖНИК АКТИВОВАНИЙ';", HTML)
+        self.assertIn("if(pos===3)return 'ЗНЯТО З ЗАПОБІЖНИКА';", HTML)
+        self.assertIn("function tx16DropSafetyState", HTML)
+        self.assertIn("dropSystemType==='single'", HTML)
 
-    def test_dual_drop_requires_sc_r_or_l_before_sf_rising_edge(self):
-        self.assertIn("if(prevSf===false && sf===true)", HTML)
+    def test_drop_activation_uses_selected_system_type(self):
+        self.assertIn("buildTx16ActivationAlerts(data.timeline,dropSystemType)", HTML)
+        self.assertIn("if(dropSystemType==='single')", HTML)
+        self.assertIn("if(scPos===3)", HTML)
+        self.assertIn("ОДИНОЧНИЙ СКИД", HTML)
         self.assertIn("if(scPos===2||scPos===3)", HTML)
         self.assertIn("const side=scPos===2?'R':'L';", HTML)
-        self.assertIn("<b>СКИД ${ev.side}", HTML)
+        self.assertIn("СКИД ${ev.side}", HTML)
 
     def test_sc_sf_activity_is_reported_even_without_valid_drop(self):
         self.assertIn("scTransitions", HTML)
@@ -46,19 +56,23 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn("SF: зафіксовано", HTML)
         self.assertIn("валідний скид не підтверджено", HTML)
 
-    def test_old_emergency_stop_semantics_are_removed(self):
-        self.assertNotIn("EMERGENCY STOP", HTML)
-        self.assertNotIn("SD=ДО СЕБЕ + SH", HTML)
-        self.assertNotIn("emergency-control", HTML)
-        self.assertIn("single-drop-control", HTML)
+    def test_sd_sh_are_emergency_stop_not_single_drop(self):
+        self.assertIn("EMERGENCY STOP", HTML)
+        self.assertIn("function tx16EmergencyStopSafetyState", HTML)
+        self.assertIn("sd:tx16EmergencyStopSafetyState(r.sd)", HTML)
+        self.assertIn("if(prevSh===false && sh===true && sdPos===3)", HTML)
+        self.assertIn("EMERGENCY STOP АКТИВОВАНО", HTML)
+        self.assertNotIn("ОДИНОЧНИЙ СКИД — SD + SH", HTML)
+        self.assertNotIn("single-drop-control", HTML)
+        self.assertIn("emergency-control", HTML)
 
-    def test_drop_groups_keep_distinct_colors(self):
+    def test_drop_and_emergency_groups_keep_distinct_colors(self):
         self.assertIn("chip('SC','sc','drop-control')", HTML)
         self.assertIn("chip('SF','sf','drop-control'+sfActive)", HTML)
-        self.assertIn("chip('SD','sd','single-drop-control')", HTML)
-        self.assertIn("chip('SH','sh','single-drop-control'+shActive)", HTML)
+        self.assertIn("chip('SD','sd','emergency-control')", HTML)
+        self.assertIn("chip('SH','sh','emergency-control'+shActive)", HTML)
         self.assertIn(".tx16-chip.drop-control", HTML)
-        self.assertIn(".tx16-chip.single-drop-control", HTML)
+        self.assertIn(".tx16-chip.emergency-control", HTML)
 
     def test_disarmed_physical_movement_is_conditional(self):
         self.assertIn("function detectDisarmedPhysicalMovement", HTML)
