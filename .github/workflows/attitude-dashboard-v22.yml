@@ -1,0 +1,35 @@
+name: Attitude dashboard v2.2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'backend/main.py'
+      - 'tests/test_attitude_dashboard_v22_contract.py'
+      - '.github/workflows/attitude-dashboard-v22.yml'
+      - 'tools/apply_attitude_dashboard_v22.py'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run attitude dashboard v2.2 contract
+        run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
+          for i,b in enumerate(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)):
+              if not b.strip():
+                  continue
+              p=Path(f'/tmp/v22-{i}.js')
+              p.write_text(b,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
