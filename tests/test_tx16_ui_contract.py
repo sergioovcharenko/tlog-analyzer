@@ -79,6 +79,13 @@ class Tx16UiContractTests(unittest.TestCase):
         self.assertIn(".tx16-chip.drop-control", HTML)
         self.assertIn(".tx16-chip.emergency-control", HTML)
 
+    def test_sa_sb_use_blue_rf_control_highlight(self):
+        self.assertIn("chip('SA','sa','rf-control')", HTML)
+        self.assertIn("chip('SB','sb','rf-control')", HTML)
+        self.assertIn(".tx16-chip.rf-control", HTML)
+        self.assertIn("#7dd3fc", HTML)
+        self.assertIn("#38bdf8", HTML)
+
     def test_sb_timeline_chip_includes_vtx_frequency_from_sa_sb_matrix(self):
         self.assertIn("function tx16VtxFrequency", HTML)
         for freq in (5180, 5240, 5300, 5520, 5580, 5640, 5700, 5765, 5825):
