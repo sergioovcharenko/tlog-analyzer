@@ -1119,9 +1119,11 @@ def radio_cal_bucket(pwm):
 
 TX16_SWITCH_CHANNELS = {
     "SH": 6,
-    "SC": 7,
-    "SD": 8,
+    "SA": 7,
+    "SB": 8,
     "SF": 10,
+    "SD": 13,
+    "SC": 15,
 }
 
 def tx16_two_position_state(pwm):
@@ -1138,7 +1140,7 @@ def tx16_two_position_state(pwm):
 def tx16_switch_state(name, pwm):
     """Normalized switch state used for change detection and Timeline text."""
     name = str(name or "").upper()
-    if name in ("SC", "SD"):
+    if name in ("SA", "SB", "SC", "SD"):
         pos = three_position_switch(pwm)
         return f"POS{pos}" if pos is not None else None
     if name in ("SF", "SH"):
@@ -2404,9 +2406,9 @@ async def analyze(file: UploadFile = File(...)):
                         current_timestamp,
                     )
 
-                # V23.9: explicitly track SC / SD / SF / SH by interpreted state,
-                # not merely by a >250 us raw jump. This fixes missed SF (CH10)
-                # transitions and makes SC/SD changes visible by switch name.
+                # TX16: track SA / SB / SC / SD / SF / SH by interpreted state,
+                # not merely by a >250 us raw jump. SA/SB are VTX selectors;
+                # SC/SD are safety selectors and SF/SH are activators.
                 for switch_name, ch_num in TX16_SWITCH_CHANNELS.items():
                     val = channels.get(ch_num, 0)
                     if not valid_number(val) or not 800 < float(val) < 2200:
