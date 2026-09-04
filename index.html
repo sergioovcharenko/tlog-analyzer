@@ -629,6 +629,11 @@ body{
 .switches-title{font-size:11px;font-weight:800;color:#cbd5e1;margin:0 0 7px}
 .switches-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px}
 .switch-card{border:1px solid #263548;border-radius:7px;background:#0a1017;padding:9px 10px;min-width:0}
+.switch-card.rf-control{border-color:rgba(56,189,248,.82)!important;background:rgba(14,116,144,.12)!important;box-shadow:inset 0 0 0 1px rgba(125,211,252,.10),0 0 12px rgba(56,189,248,.12)}
+.switch-card.rf-control .switch-name{color:#bae6fd!important}
+.switch-card.rf-control .switch-channel{color:#7dd3fc!important}
+.switch-card.rf-control .switch-state,.switch-card.rf-control .switch-state b{color:#7dd3fc!important}
+
 .switch-name{font-size:12px;font-weight:900;color:#e2e8f0}
 .switch-channel{font:10px/1.4 monospace;color:#64748b;margin-top:1px}
 .switch-state{font:11px/1.45 monospace;color:#93c5fd;margin-top:5px}
@@ -2174,13 +2179,13 @@ function renderTx16Switches(item){
   const sfOn=tx16HighActive(sf), shOn=tx16HighActive(sh);
   const scPos=tx16ThreePos(sc), sdPos=tx16ThreePos(sd);
   const pwm=v=>v===null?'—':`${Math.round(v)} us`;
-  const card=(name,ch,state,cls='')=>`<div class="switch-card"><div class="switch-name">${name}</div><div class="switch-channel">CH${ch} • ${pwm(rcPwmValue(item,ch))}</div><div class="switch-state ${cls}"><b>${state}</b></div></div>`;
+  const card=(name,ch,state,cls='')=>{const rf=cls==='rf-control';const cardCls=rf?' rf-control':'';const stateCls=rf?'':cls;return `<div class="switch-card${cardCls}"><div class="switch-name">${name}</div><div class="switch-channel">CH${ch} • ${pwm(rcPwmValue(item,ch))}</div><div class="switch-state ${stateCls}"><b>${state}</b></div></div>`;};
   const band=tx16ThreePos(sa); const bandText=band===1?'5.2 GHz':band===2?'5.5 GHz':band===3?'5.8 GHz':'—';
-  const sbPos=tx16ThreePos(sb); const sbText=sbPos?`K${sbPos}`:'—';
+  const sbPos=tx16ThreePos(sb); const sbText=sbPos?`${tx16VtxFrequency(band,sbPos)} MHz`:'—';
   return `<div class="switches-wrap">
     <div class="switches-title">🎚 TX16S — SA / SB / SC / SF / SD / SH</div>
     <div class="switches-grid">
-      ${card('SA',7,bandText)}${card('SB',8,sbText)}
+      ${card('SA',7,bandText,'rf-control')}${card('SB',8,sbText,'rf-control')}
       ${card('SC',15,tx16DualDropSafetyState(sc),scPos===1?'switch-safe':'switch-stop')}
       ${card('SF',10,sfOn===true?'АКТИВАТОР УВІМКНЕНО':sfOn===false?'НЕ АКТИВОВАНО':'ПЕРЕХІДНА ЗОНА',sfOn===true?'switch-stop':'switch-safe')}
       ${card('SD',13,tx16SingleDropSafetyState(sd),sdPos===3?'switch-active':'switch-safe')}
