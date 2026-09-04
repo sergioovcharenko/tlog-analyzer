@@ -1,0 +1,33 @@
+name: TX16 drop UI contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tx16-drop-ui-test.yml'
+      - 'tests/test_tx16_ui_contract.py'
+      - 'index.html'
+      - 'tools/apply_drop_system_ui.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TX16 UI contract
+        run: python -m unittest tests.test_tx16_ui_contract -v
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>')
+          b=s.find('</script>',a)
+          if a < 0 or b < 0:
+              raise SystemExit('embedded script not found')
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
