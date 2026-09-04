@@ -1659,6 +1659,28 @@ function renderResults(data){
   }
 
 
+  const disarmedMovement=detectDisarmedPhysicalMovement(data);
+  if(disarmedMovement.events.length){
+    data.timeline=[...(Array.isArray(data.timeline)?data.timeline:[]),...disarmedMovement.events]
+      .sort((a,b)=>(timelineSeconds(a?.time)??0)-(timelineSeconds(b?.time)??0));
+  }
+
+  const escPowertrain=buildEscPowertrainAlerts(data.timeline);
+  if(escPowertrain.events.length){
+    data.timeline=[...(Array.isArray(data.timeline)?data.timeline:[]),...escPowertrain.events]
+      .sort((a,b)=>(timelineSeconds(a?.time)??0)-(timelineSeconds(b?.time)??0));
+  }
+
+  const maxCurrentRow=(Array.isArray(data.timeline)?data.timeline:[])
+    .filter(row=>typeof row?.curr==='number'&&Number.isFinite(row.curr))
+    .reduce((best,row)=>(!best||row.curr>best.curr)?row:best,null);
+  const highCurrentAlerts=[];
+  if(maxCurrentRow&&maxCurrentRow.curr>80){
+    const time=maxCurrentRow.time||'';
+    const jumpAttr=time?` data-jump-time="${time}"`:'';
+    highCurrentAlerts.push(`<span class="ai-jump" data-attention-severity="attention"${jumpAttr}>⚡ <b>ВИСОКЕ СПОЖИВАННЯ СТРУМУ:</b> максимум ${maxCurrentRow.curr.toFixed(1)} A${time?` о ${time}`:''}. Порогове значення уваги: &gt;80 A.${time?' Натисніть, щоб перейти до Timeline.':''}</span>`);
+  }
+
   const combinedAiAlerts=[
     ...highCurrentAlerts,
     ...(data.ai?.alerts||[]),
