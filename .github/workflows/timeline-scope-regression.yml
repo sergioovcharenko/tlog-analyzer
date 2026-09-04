@@ -1,0 +1,16 @@
+name: Timeline scope regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/timeline-scope-regression.yml'
+      - 'tests/test_timeline_scope_runtime.py'
+
+jobs:
+  runtime-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce runtime scope failure
+        run: python -m unittest tests/test_timeline_scope_runtime.py -v
