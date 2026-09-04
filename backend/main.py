@@ -1326,9 +1326,8 @@ async def analyze(file: UploadFile = File(...)):
         curr_voltage = 0.0
         curr_amp = 0.0
 
-        # V23.6: поточне навантаження силової установки.
-        # Для мультикоптера беремо MAVLink VFR_HUD.throttle (0..100 %).
-        # Це командний throttle/engine load, а не CPU load з SYS_STATUS.load.
+        # Поточний Engine Load з MAVLink EFI_STATUS.engine_load (0..100 %).
+        # VFR_HUD.throttle зберігається окремо лише як throttle/maxThrottle.
         curr_engine_load = None
 
         curr_rssi_pct = 0
@@ -1692,7 +1691,7 @@ async def analyze(file: UploadFile = File(...)):
                     "videoFreq": curr_video_freq,
                     "volt": round(curr_voltage, 2) if curr_voltage > 0 else None,
                     "curr": round(curr_amp, 1) if curr_amp >= 0 else None,
-                    # V23.6: Engine Load = VFR_HUD.throttle у відсотках.
+                    # Engine Load = EFI_STATUS.engine_load у відсотках.
                     "engineLoad": round(curr_engine_load, 1) if valid_number(curr_engine_load) else None,
                     "rssi": curr_rssi_pct if curr_rssi_pct > 0 else None,
                     "dbm": round(curr_dbm) if curr_dbm != 0 else None,
@@ -1755,7 +1754,7 @@ async def analyze(file: UploadFile = File(...)):
                     "videoFreq": curr_video_freq,
                     "volt": round(curr_voltage, 2) if curr_voltage > 0 else None,
                     "curr": round(curr_amp, 1) if curr_amp >= 0 else None,
-                    # V23.6: Engine Load = VFR_HUD.throttle у відсотках.
+                    # Engine Load = EFI_STATUS.engine_load у відсотках.
                     "engineLoad": round(curr_engine_load, 1) if valid_number(curr_engine_load) else None,
                     "rssi": curr_rssi_pct if curr_rssi_pct > 0 else None,
                     "dbm": round(curr_dbm) if curr_dbm != 0 else None,
@@ -2009,7 +2008,7 @@ async def analyze(file: UploadFile = File(...)):
         # ====================================================
 
         needed_messages = [
-            "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "ALTITUDE",
+            "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "EFI_STATUS", "ALTITUDE",
             "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "RC_CHANNELS",
             "RADIO", "RADIO_STATUS", "ATTITUDE", "VIBRATION",
             "TEMPERATURE", "HIGHRES_IMU", "SCALED_PRESSURE",
@@ -2223,15 +2222,18 @@ async def analyze(file: UploadFile = File(...)):
                         float(msg.groundspeed),
                     )
 
-                # V23.6: Engine Load для Timeline.
-                # VFR_HUD.throttle у ArduPilot/MAVLink передається як 0..100 %.
-                # Зберігаємо саме поточне значення, а max_throttle лишається
-                # окремою статистикою максимального навантаження за політ.
+                # VFR_HUD.throttle залишаємо лише як окрему команду throttle / maxThrottle.
+                # Це НЕ Engine Load і не повинно підміняти EFI_STATUS.engine_load.
                 throttle_val = getattr(msg, "throttle", None)
                 if valid_number(throttle_val):
                     throttle_val = max(0.0, min(100.0, float(throttle_val)))
-                    curr_engine_load = throttle_val
                     max_throttle = max(max_throttle, throttle_val)
+
+            # EFI_STATUS — фактичний Engine Load, який показує Mission Planner.
+            elif msg_type == "EFI_STATUS":
+                engine_load_val = getattr(msg, "engine_load", None)
+                if valid_number(engine_load_val):
+                    curr_engine_load = max(0.0, min(100.0, float(engine_load_val)))
 
             # ALTITUDE
             elif msg_type == "ALTITUDE":

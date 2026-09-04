@@ -2366,7 +2366,7 @@ function engineLoadToKeypoints(load){
 function renderEngineLoad(load){
   if(typeof load!=='number'||!Number.isFinite(load)) return '—';
   const kp=engineLoadToKeypoints(load);
-  return `<div>${load.toFixed(0)}%</div><div style="margin-top:3px;font-size:10px;color:#8fb0d6;white-space:nowrap;">${kp} точок</div>`;
+  return `<div>${load.toFixed(1)}%</div><div style="margin-top:3px;font-size:10px;color:#8fb0d6;white-space:nowrap;">${kp} точок</div>`;
 }
 
 function renderTimelineTable(items,containerId){
