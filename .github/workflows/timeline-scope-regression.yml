@@ -21,6 +21,25 @@ jobs:
       - name: Run runtime regression test
         run: python -m unittest tests/test_timeline_scope_runtime.py -v
 
+      - name: Check renderResults prerequisites
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          start=s.find('function renderResults(data){')
+          end=s.find("document.getElementById('aiAlerts').innerHTML", start)
+          block=s[start:end]
+          required=[
+            'const disarmedMovement=detectDisarmedPhysicalMovement(data);',
+            'const escPowertrain=buildEscPowertrainAlerts(data.timeline);',
+            'const highCurrentAlerts=[];'
+          ]
+          missing=[x for x in required if x not in block]
+          if missing:
+            raise SystemExit('missing renderResults prerequisites: '+', '.join(missing))
+          print('renderResults prerequisites OK')
+          PY
+
       - name: Check JavaScript syntax
         run: |
           python - <<'PY'
@@ -48,5 +67,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m 'fix: restore analyzer runtime after helper scope regression'
+          git commit -m 'fix: restore analyzer runtime after TX16 patch regression'
           git push
