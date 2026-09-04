@@ -145,6 +145,111 @@ def valid_number(value):
         return False
 
 
+
+
+def _timeline_graph_time_ms(value):
+    m = re.match(r"^(-)?(\d+):(\d+(?:\.\d+)?)$", str(value or "").strip())
+    if not m:
+        return None
+    total = int(m.group(2)) * 60.0 + float(m.group(3))
+    if m.group(1):
+        total = -total
+    return int(round(total * 1000.0))
+
+
+def _graph_numeric(value):
+    if valid_number(value):
+        return float(value)
+    m = re.search(r"-?\d+(?:[\.,]\d+)?", str(value or ""))
+    if not m:
+        return None
+    try:
+        number = float(m.group(0).replace(",", "."))
+    except ValueError:
+        return None
+    return number if valid_number(number) else None
+
+
+def _build_graph_data(timeline_rows, attitude_samples=None, base_timestamp=0.0):
+    """Build finite telemetry series for the interactive graph viewer.
+
+    Timeline snapshots provide low-rate values already validated by the analyzer.
+    ATTITUDE samples are kept separately at native MAVLink rate for a smoother
+    artificial horizon. Missing series are omitted entirely.
+    """
+    out = {}
+
+    def append_pair(time_key, value_key, time_ms, value):
+        if time_ms is None or not valid_number(value):
+            return
+        out.setdefault(time_key, []).append(int(round(float(time_ms))))
+        out.setdefault(value_key, []).append(float(value))
+
+    for row in timeline_rows or []:
+        if not isinstance(row, dict) or row.get("eventType") != "SNAPSHOT":
+            continue
+        t_ms = _timeline_graph_time_ms(row.get("time"))
+        if t_ms is None:
+            continue
+
+        append_pair("altitude_time_ms", "altitude_m", t_ms, _graph_numeric(row.get("alt")))
+        append_pair("voltage_time_ms", "voltage_v", t_ms, row.get("volt"))
+        append_pair("current_time_ms", "current_a", t_ms, row.get("curr"))
+        append_pair("engine_load_time_ms", "engine_load_pct", t_ms, row.get("engineLoad"))
+        append_pair("radio_time_ms", "radio_dbm", t_ms, row.get("dbm"))
+        append_pair("vertical_speed_time_ms", "vertical_speed_down_ms", t_ms, row.get("verticalSpeedDown"))
+
+        rc = row.get("rcChannels") or {}
+        if isinstance(rc, dict):
+            for ch in range(1, 19):
+                append_pair(
+                    f"rc_ch{ch}_time_ms",
+                    f"rc_ch{ch}_pwm",
+                    t_ms,
+                    rc.get(f"ch{ch}"),
+                )
+
+        esc = row.get("esc") or []
+        if isinstance(esc, list):
+            for item in esc:
+                if not isinstance(item, dict):
+                    continue
+                esc_id = item.get("id")
+                if not valid_number(esc_id):
+                    continue
+                esc_id = int(float(esc_id))
+                if not 1 <= esc_id <= 4:
+                    continue
+                append_pair(f"esc{esc_id}_rpm_time_ms", f"esc{esc_id}_rpm", t_ms, item.get("rpm"))
+                append_pair(f"esc{esc_id}_current_time_ms", f"esc{esc_id}_current_a", t_ms, item.get("current"))
+
+    attitude_time = []
+    roll_values = []
+    pitch_values = []
+    yaw_values = []
+    for sample in attitude_samples or []:
+        if not isinstance(sample, dict):
+            continue
+        ts = sample.get("timestamp")
+        roll = sample.get("roll")
+        pitch = sample.get("pitch")
+        yaw = sample.get("yaw")
+        if not all(valid_number(v) for v in (ts, roll, pitch, yaw)):
+            continue
+        t_ms = int(round((float(ts) - float(base_timestamp or 0.0)) * 1000.0))
+        attitude_time.append(t_ms)
+        roll_values.append(math.degrees(float(roll)))
+        pitch_values.append(math.degrees(float(pitch)))
+        yaw_values.append(math.degrees(float(yaw)) % 360.0)
+
+    if attitude_time:
+        out["attitude_time_ms"] = attitude_time
+        out["roll_deg"] = roll_values
+        out["pitch_deg"] = pitch_values
+        out["yaw_deg"] = yaw_values
+
+    return out
+
 def heading_difference_deg(a, b):
     """Smallest absolute angular difference, 0..180 degrees."""
     if not valid_number(a) or not valid_number(b):
@@ -1351,6 +1456,8 @@ async def analyze(file: UploadFile = File(...)):
         attitude_critical_events = []
         attitude_critical_active = False
         attitude_critical_peak = None
+        # Native-rate ATTITUDE stream for the graph/aviation-horizon viewer.
+        attitude_graph_samples = []
 
         # VTX
         curr_video_freq = None
@@ -2544,6 +2651,19 @@ async def analyze(file: UploadFile = File(...)):
 
             # ATTITUDE
             elif msg_type == "ATTITUDE":
+                if (
+                    current_timestamp > 0
+                    and valid_number(getattr(msg, "roll", None))
+                    and valid_number(getattr(msg, "pitch", None))
+                    and valid_number(getattr(msg, "yaw", None))
+                ):
+                    attitude_graph_samples.append({
+                        "timestamp": current_timestamp,
+                        "roll": float(msg.roll),
+                        "pitch": float(msg.pitch),
+                        "yaw": float(msg.yaw),
+                    })
+
                 if valid_number(msg.roll):
                     curr_roll = math.degrees(msg.roll)
                     abs_roll = abs(curr_roll)
@@ -4568,8 +4688,11 @@ async def analyze(file: UploadFile = File(...)):
         else:
             ai_verdict = "📊 ПОВНИЙ АНАЛІЗ ПОЛЬОТУ:"
 
+        graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
+
         return {
             "success": True,
+            "graph_data": graph_data,
             "ai": {
                 "verdict": ai_verdict,
                 "isCritical": is_critical,
