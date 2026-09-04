@@ -1253,6 +1253,14 @@ function renderAnalysisFingerprint(data){
   grid.innerHTML=items.map(([label,value])=>`<div class="analysis-fingerprint-item"><div class="analysis-fingerprint-label">${label}</div><div class="analysis-fingerprint-value">${value}</div></div>`).join('');
 }
 
+// Global Timeline time parser used by analysis helpers outside renderResults().
+function timelineSeconds(t){
+  const m=String(t||'').match(/(-?)(\d+):(\d+(?:\.\d+)?)/);
+  if(!m)return null;
+  const v=(+m[2])*60+(+m[3]);
+  return m[1]==='-'?-v:v;
+}
+
 function detectDisarmedPhysicalMovement(data){
   const sessionCount=Number(data?.flight?.flightSessionCount||0);
   if(sessionCount>0)return {events:[],alerts:[]};
