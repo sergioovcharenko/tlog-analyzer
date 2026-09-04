@@ -868,6 +868,11 @@ body{
 .attitude-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;font:12px monospace}
 .attitude-value{min-width:0}.attitude-value b{white-space:normal}.attitude-value .att-main{display:block;font-size:15px;font-weight:900;color:#f8fafc}
 .attitude-value.att-fc .att-main{color:#38bdf8}.attitude-value.att-current .att-main{color:#fb7185}.attitude-value.att-engine .att-main{color:#facc15}
+.attitude-value.att-fc .att-main,.attitude-value.att-current .att-main{color:#f8fafc}
+.att-bat-green .att-main{color:#22c55e!important}.att-bat-orange .att-main{color:#f59e0b!important}.att-bat-red .att-main{color:#ef4444!important}
+.att-current-red .att-main{color:#ef4444!important}
+.att-fc-orange .att-main{color:#f59e0b!important}.att-fc-red .att-main{color:#ef4444!important}
+.att-engine-green .att-main{color:#22c55e!important}
 
 .attitude-value{border:1px solid #253246;border-radius:6px;padding:8px;background:#080d13}.attitude-value b{display:block;color:#7dd3fc;margin-bottom:2px}
 .attitude-value b{font-size:10px;letter-spacing:.06em}
@@ -1747,6 +1752,22 @@ function selectGraphTime(timeMs){
   if(!Number.isFinite(timeMs))return;graphViewerState.selectedTimeMs=timeMs;updateAttitudeAtTime(timeMs);const m=graphMetricByKey(graphViewerState.metricKey);if(m)renderGraphSeries(m);
 }
 
+function attitudeBatClass(v){
+  if(!Number.isFinite(v))return '';
+  if(v>=20&&v<=25.2)return 'att-bat-green';
+  if(v>=18&&v<20)return 'att-bat-orange';
+  if(v<=17.99)return 'att-bat-red';
+  return '';
+}
+function attitudeCurrentClass(v){
+  return Number.isFinite(v)&&v>=80?'att-current-red':'';
+}
+function attitudeFcTempClass(v){
+  if(!Number.isFinite(v))return '';
+  if(v>=85)return 'att-fc-red';
+  if(v>=80&&v<85)return 'att-fc-orange';
+  return '';
+}
 function updateAttitudeAtTime(timeMs){
   const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
   const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
@@ -1776,10 +1797,10 @@ function updateAttitudeAtTime(timeMs){
     <div class="attitude-value"><b>YAW</b><span class="att-main">${Number.isFinite(yaw)?yaw.toFixed(1)+'°':'—'}</span></div>
     <div class="attitude-value"><b>ALT</b><span class="att-main">${alt===null?'—':alt.toFixed(1)+' м'}</span></div>
     <div class="attitude-value"><b>ЧАС</b><span class="att-main">${formatGraphTime(timeMs)}</span></div>
-    <div class="attitude-value"><b>BAT</b><span class="att-main">${voltage===null?'—':voltage.toFixed(1)+' V'}</span></div>
-    <div class="attitude-value att-fc"><b>ТЕМПЕРАТУРА FC</b><span class="att-main">${fcTemp===null?'—':fcTemp.toFixed(1)+' °C'}</span></div>
-    <div class="attitude-value att-current"><b>СПОЖИВАННЯ СТРУМУ</b><span class="att-main">${current===null?'—':current.toFixed(1)+' A'}</span></div>
-    <div class="attitude-value att-engine"><b>ENGINE LOAD</b><span class="att-main">${engineLoad===null?'—':engineLoad.toFixed(1)+' %'}</span></div>`;
+    <div class="attitude-value ${attitudeBatClass(voltage)}"><b>BAT</b><span class="att-main">${voltage===null?'—':voltage.toFixed(1)+' V'}</span></div>
+    <div class="attitude-value att-fc ${attitudeFcTempClass(fcTemp)}"><b>ТЕМПЕРАТУРА FC</b><span class="att-main">${fcTemp===null?'—':fcTemp.toFixed(1)+' °C'}</span></div>
+    <div class="attitude-value att-current ${attitudeCurrentClass(current)}"><b>CURRENT</b><span class="att-main">${current===null?'—':current.toFixed(1)+' A'}</span></div>
+    <div class="attitude-value att-engine att-engine-green"><b>ENGINE LOAD</b><span class="att-main">${engineLoad===null?'—':engineLoad.toFixed(1)+' %'}</span></div>`;
 }
 
 function graphTimeFromClientX(clientX){
