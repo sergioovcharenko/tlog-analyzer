@@ -108,9 +108,6 @@ body{
 }
 .file-name{font-weight:600;font-size:15px}
 .file-size{color:var(--text-muted);font-size:13px;margin-top:4px}
-.drop-system-picker{margin-top:16px;padding:14px 16px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-card);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.drop-system-picker label{font-size:12px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px}
-.drop-system-picker select{background:#0f141c;color:var(--text-main);border:1px solid var(--border-highlight);border-radius:6px;padding:9px 12px;font-weight:800}
 .analyze{
   width:100%;
   margin-top:20px;
@@ -835,13 +832,6 @@ body{
 
   <input id="fileInput" type="file" accept=".tlog">
 
-  <div class="drop-system-picker">
-    <label for="dropSystemType">Система скиду</label>
-    <select id="dropSystemType">
-      <option value="dual" selected>ПОДВІЙНА</option>
-      <option value="single">ОДИНОЧНА</option>
-    </select>
-  </div>
 
   <div class="file-box" id="fileBox">
     <div class="file-name" id="fileName"></div>
@@ -1618,8 +1608,48 @@ function renderResults(data){
     return m[1]==='-'?-v:v;
   }
 
-  function buildTx16ActivationAlerts(timeline,dropSystemType){
+  function inferDropSystemType(timeline){
     const rows=Array.isArray(timeline)?timeline:[];
+    let prevSf=null;
+    let middleSfActivations=0;
+    let towardSfActivations=0;
+    let safetySfActivations=0;
+
+    rows.forEach(row=>{
+      if(!row)return;
+      const sf=tx16HighActive(rcPwmValue(row,10));
+      const scPos=tx16ThreePos(rcPwmValue(row,15));
+      if(sf!==null){
+        if(prevSf===false && sf===true){
+          if(scPos===2)middleSfActivations++;
+          else if(scPos===3)towardSfActivations++;
+          else safetySfActivations++;
+        }
+        prevSf=sf;
+      }
+    });
+
+    if(middleSfActivations>0){
+      return {
+        type:'dual', confidence:'high', middleSfActivations, towardSfActivations, safetySfActivations,
+        reason:`SF активувався при SC=СЕРЕДИНА ${middleSfActivations} раз(и); для одиночної системи середнє положення лишається на запобіжнику.`
+      };
+    }
+    if(towardSfActivations>0){
+      return {
+        type:'single', confidence:'medium', middleSfActivations, towardSfActivations, safetySfActivations,
+        reason:`усі робочі активації SF зафіксовані при SC=ДО СЕБЕ (${towardSfActivations}). Це відповідає одиночній системі, але така сама команда можлива як L у подвійній системі.`
+      };
+    }
+    return {
+      type:'unknown', confidence:'low', middleSfActivations, towardSfActivations, safetySfActivations,
+      reason:'у логу немає достатньої кількості валідних активацій SF при робочих положеннях SC.'
+    };
+  }
+
+  function buildTx16ActivationAlerts(timeline){
+    const rows=Array.isArray(timeline)?timeline:[];
+    const inferredDropSystem=inferDropSystemType(rows);
     const dropEvents=[];
     const emergencyStopEvents=[];
     const scTransitions=[];
@@ -1645,15 +1675,17 @@ function renderResults(data){
       if(sf!==null){
         if(prevSf===false && sf===true){
           sfActivations.push({time:row.time||'',scPos,pwm:rcPwmValue(row,10)});
-          if(dropSystemType==='single'){
+          if(inferredDropSystem.type==='single'){
             if(scPos===3){
               dropEvents.push({time:row.time||'',kind:'single',pwm:rcPwmValue(row,10)});
             }
-          }else{
+          }else if(inferredDropSystem.type==='dual'){
             if(scPos===2||scPos===3){
               const side=scPos===2?'R':'L';
               dropEvents.push({time:row.time||'',kind:'dual',side,selector:tx16DualDropSafetyState(rcPwmValue(row,15)),pwm:rcPwmValue(row,10)});
             }
+          }else if(scPos===3){
+            dropEvents.push({time:row.time||'',kind:'ambiguous',pwm:rcPwmValue(row,10)});
           }
         }
         prevSf=sf;
@@ -1678,6 +1710,14 @@ function renderResults(data){
     }
 
     const out=[];
+    if(inferredDropSystem.type==='dual'){
+      out.push(`🎯 <b>ЙМОВІРНИЙ ТИП СИСТЕМИ СКИДУ: ПОДВІЙНА — висока впевненість.</b> ${inferredDropSystem.reason}`);
+    }else if(inferredDropSystem.type==='single'){
+      out.push(`🎯 <b>ЙМОВІРНИЙ ТИП СИСТЕМИ СКИДУ: ОДИНОЧНА — середня впевненість.</b> ${inferredDropSystem.reason}`);
+    }else{
+      out.push(`⚪ <b>ТИП СИСТЕМИ СКИДУ НЕМОЖЛИВО ВИЗНАЧИТИ ОДНОЗНАЧНО.</b> ${inferredDropSystem.reason}`);
+    }
+
     if(scTransitions.length){
       const first=scTransitions[0];
       out.push(`<span class="ai-jump" data-jump-time="${first.time}">🎚 <b>SC: зафіксовано ${scTransitions.length} перемикань.</b>${first.time?` Перше — ${first.time}.`:''} Натисніть, щоб перейти до першого перемикання.</span>`);
@@ -1689,35 +1729,34 @@ function renderResults(data){
 
     dropEvents.forEach((ev,i)=>{
       const n=dropEvents.length>1?` №${i+1}`:'';
-      if(dropSystemType==='single'){
-        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🔴 <b>ОДИНОЧНИЙ СКИД${n} — SC + SF:</b> ${ev.time}; SC: ЗНЯТО З ЗАПОБІЖНИКА; SF: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Команда скиду підтверджена за каналами пульта; фізичне відділення вантажу TLOG напряму не підтверджує.</span>`);
+      if(ev.kind==='single'){
+        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🔴 <b>ОДИНОЧНИЙ СКИД${n} — SC + SF:</b> ${ev.time}; SC: ЗНЯТО З ЗАПОБІЖНИКА; SF: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Команда підтверджена за каналами пульта; фізичне відділення вантажу TLOG напряму не підтверджує.</span>`);
+      }else if(ev.kind==='dual'){
+        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🔴 <b>СКИД ${ev.side}${n} — SC + SF:</b> ${ev.time}; SC: ${ev.selector}; SF: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Команда підтверджена за каналами пульта; фізичне відділення вантажу TLOG напряму не підтверджує.</span>`);
       }else{
-        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🔴 <b>СКИД ${ev.side}${n} — SC + SF:</b> ${ev.time}; SC: ${ev.selector}; SF: АКТИВАТОР УВІМКНЕНО${typeof ev.pwm==='number'?` (${Math.round(ev.pwm)} us)`:''}. Команда скиду підтверджена за каналами пульта; фізичне відділення вантажу TLOG напряму не підтверджує.</span>`);
+        out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🟡 <b>КОМАНДА СКИДУ — SC + SF:</b> ${ev.time}; SC=ДО СЕБЕ, SF=УВІМКНЕНО. За цим епізодом неможливо відрізнити одиночну систему від команди L подвійної системи.</span>`);
       }
     });
-    if(dropSystemType==='dual'){
+
+    if(inferredDropSystem.type==='dual'){
       const sides=new Set(dropEvents.filter(ev=>ev.kind==='dual').map(ev=>ev.side));
       if(sides.has('R')&&sides.has('L')){
         out.push('🔴 <b>ЙМОВІРНО ПОДВІЙНИЙ СКИД:</b> зафіксовано окремі валідні команди R та L. Фізичне відділення двох вантажів потребує додаткового підтвердження за струмом/динамікою.');
       }
     }
     if((scTransitions.length||sfActivations.length)&&!dropEvents.length){
-      const typeText=dropSystemType==='single'?'ОДИНОЧНА':'ПОДВІЙНА';
-      out.push(`🟡 <b>СИСТЕМА СКИДУ (${typeText}):</b> були перемикання SC/SF, але валідний скид не підтверджено.`);
+      out.push('🟡 <b>СИСТЕМА СКИДУ:</b> були перемикання SC/SF, але валідний скид не підтверджено.');
     }
 
     emergencyStopEvents.forEach((ev,i)=>{
       const n=emergencyStopEvents.length>1?` №${i+1}`:'';
-      const duration=typeof ev.duration==='number'?ev.duration:null;
-      const holdText=duration!==null?` SH утримувався приблизно ${duration.toFixed(1)} с.`:'';
-      const cycleText=duration!==null&&duration>=9
-        ?' Утримання відповідає приблизно 10-секундному циклу E-STOP.'
-        :' Повний приблизно 10-секундний цикл E-STOP не підтверджено.';
-      out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🛑 <b>EMERGENCY STOP АКТИВОВАНО${n}:</b> ${ev.time}; SD: ЗАПОБІЖНИК ЗНЯТО; SH: АКТИВАТОР УВІМКНЕНО.${holdText}${cycleText} Це команда на примусову зупинку моторів; фактичну зупинку слід підтверджувати за RPM/ESC.</span>`);
+      const dur=typeof ev.duration==='number'?ev.duration:null;
+      const durationText=dur!==null?` Утримання SH ≈ ${dur.toFixed(1)} с.`:'';
+      const cycleText=dur!==null&&dur>=8?' Повний цикл близький до 10 с.':' Для повного циклу очікується утримання близько 10 с.';
+      out.push(`<span class="ai-jump" data-jump-time="${ev.time}">🛑 <b>EMERGENCY STOP АКТИВОВАНО${n}:</b> ${ev.time}; SD=ДО СЕБЕ (запобіжник знято) + SH=НАТИСНУТО.${durationText}${cycleText} Це команда примусової зупинки моторів; факт зупинки потрібно підтверджувати за RPM/ESC.</span>`);
     });
     return out;
   }
-
 
   const disarmedMovement=detectDisarmedPhysicalMovement(data);
   if(disarmedMovement.events.length){
@@ -1741,11 +1780,10 @@ function renderResults(data){
     highCurrentAlerts.push(`<span class="ai-jump" data-attention-severity="attention"${jumpAttr}>⚡ <b>ВИСОКЕ СПОЖИВАННЯ СТРУМУ:</b> максимум ${maxCurrentRow.curr.toFixed(1)} A${time?` о ${time}`:''}. Порогове значення уваги: &gt;80 A.${time?' Натисніть, щоб перейти до Timeline.':''}</span>`);
   }
 
-  const dropSystemType=currentDropSystemType();
   const combinedAiAlerts=[
     ...highCurrentAlerts,
     ...(data.ai?.alerts||[]),
-    ...buildTx16ActivationAlerts(data.timeline,dropSystemType),
+    ...buildTx16ActivationAlerts(data.timeline),
     ...disarmedMovement.alerts,
     ...escPowertrain.alerts
   ];
@@ -1866,8 +1904,8 @@ function renderResults(data){
     ${createCard('CH4 Yaw',data.radioChannels?.ch4||'—')}
     ${createCard('SA — CH7',uiSwitchSummary(collectChannel(7),p=>`5.${tx16ThreePos(p)===1?'2':tx16ThreePos(p)===2?'5':'8'} GHz`),'Вибір діапазону VTX: 5.2 / 5.5 / 5.8 GHz')}
     ${createCard('SB — CH8',uiSwitchSummary(collectChannel(8),p=>`K${tx16ThreePos(p)||'—'}`),'Вибір відеоканалу K1 / K2 / K3')}
-    ${createCard('SC — CH15',uiSwitchSummary(collectChannel(15),p=>tx16DropSafetyState(p)),'Система скиду: ПОДВІЙНА — ВІД СЕБЕ запобіжник, СЕРЕДИНА R, ДО СЕБЕ L; ОДИНОЧНА — лише ДО СЕБЕ знімає запобіжник')}
-    ${createCard('SF — CH10',uiSwitchSummary(collectChannel(10),p=>tx16TwoPosHuman(p,false)),'Активатор системи скиду; трактування SC залежить від вибраного типу системи')}
+    ${createCard('SC — CH15',uiSwitchSummary(collectChannel(15),p=>tx16DropSafetyState(p)),'Запобіжник системи скиду. Тип системи (одиночна/подвійна) визначається автоматично за поведінкою SC + SF у логу')}
+    ${createCard('SF — CH10',uiSwitchSummary(collectChannel(10),p=>tx16TwoPosHuman(p,false)),'Активатор системи скиду; аналізатор автоматично оцінює тип системи за положенням SC у моменти активації SF')}
     ${createCard('SD — CH13',uiSwitchSummary(collectChannel(13),tx16EmergencyStopSafetyState),'EMERGENCY STOP: ВІД СЕБЕ/СЕРЕДИНА — запобіжник; ДО СЕБЕ — запобіжник знято')}
     ${createCard('SH — CH6',uiSwitchSummary(collectChannel(6),p=>tx16TwoPosHuman(p,true)),'EMERGENCY STOP: активатор примусової зупинки моторів; валідно лише коли SD=ЗАПОБІЖНИК ЗНЯТО')}
     ${createCard(
@@ -2240,12 +2278,12 @@ function tx16EmergencyStopSafetyState(pwm){
   if(pos===3)return 'ЗАПОБІЖНИК ЗНЯТО';
   return '—';
 }
-function currentDropSystemType(){
-  const value=document.getElementById('dropSystemType')?.value;
-  return value==='single'?'single':'dual';
-}
-function tx16DropSafetyState(pwm,dropSystemType=currentDropSystemType()){
-  return dropSystemType==='single'?tx16SingleDropSafetyState(pwm):tx16DualDropSafetyState(pwm);
+function tx16DropSafetyState(pwm){
+  const pos=tx16ThreePos(pwm);
+  if(pos===1)return 'ЗАПОБІЖНИК АКТИВОВАНИЙ';
+  if(pos===2)return 'СЕРЕДИНА';
+  if(pos===3)return 'ДО СЕБЕ';
+  return '—';
 }
 
 function tx16TwoPosHuman(pwm, isMomentary=false){
