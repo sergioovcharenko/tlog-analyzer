@@ -9,7 +9,7 @@ Reorganize the existing graph/attitude/MAVLink screen into a clearer professiona
 
 ## Core decision
 
-Use the second mockup as the structural reference, but keep the current artificial horizon exactly as the source component. We are changing layout, grouping, responsive behavior, and discoverability — not changing telemetry calculations, backend output, flight analysis logic, or the horizon rendering logic.
+Use the second mockup as the structural reference, but keep the current artificial horizon exactly as the source component. We are changing layout, grouping, responsive behavior, theme presentation, and discoverability — not changing telemetry calculations, backend output, flight analysis logic, or the horizon rendering logic.
 
 ## Desktop layout
 
@@ -81,6 +81,21 @@ The existing dynamic MAVLink field source remains unchanged. This is a presentat
 
 On desktop, the section may be expanded by default if there is enough vertical space; the user can collapse it. The selected graph series remain visible as chips even when the full selector is collapsed.
 
+## Theme switcher
+
+Add a two-state theme control in the graph dashboard header using the approved labels:
+- `● Темна`
+- `○ Світла`
+
+Requirements:
+- dark remains the default when there is no saved preference;
+- the active state is visually highlighted;
+- the selected theme is persisted in `localStorage` under key `tlog-theme` with values `dark` or `light`;
+- switching themes must not reload the page or trigger backend requests;
+- the theme applies to the entire graph dashboard: page/background, cards, tabs, graph canvas/container, axes/grid/tooltip chrome where controlled by frontend styling, MAVLink selector, board messages, TX16 dock, buttons and inputs;
+- status/series semantics remain consistent: red/yellow/green/cyan series/status meanings are preserved;
+- the current artificial horizon drawing itself is not recolored or rewritten by the theme feature; only its surrounding panel chrome follows the selected theme.
+
 ## Responsive behavior
 
 ### Desktop: >= 1200 px
@@ -125,7 +140,7 @@ The redesign must not alter:
 Prefer a low-risk UI refactor:
 - keep existing element IDs and data hooks wherever possible
 - add layout wrapper classes around existing components
-- add tab state in frontend JavaScript only
+- add tab/theme state in frontend JavaScript only
 - preserve existing event handlers and data objects
 - avoid rewriting graph/horizon implementations
 
@@ -137,13 +152,14 @@ If a current block must move, relocate its DOM container rather than duplicate i
 2. Existing dynamic MAVLink graph tests remain green.
 3. Existing attitude/horizon regression tests remain green.
 4. Existing TX16 regression tests remain green.
-5. Add responsive/layout contract tests for the new wrappers/tabs.
+5. Add responsive/layout/theme contract tests for the new wrappers/tabs.
 6. Desktop at 1366/1440/1920 px: graph is visually dominant and no page-level horizontal scroll is introduced.
 7. Tablet at 768/1024 px: graph and detail panel stack cleanly.
 8. Phone at 360/390/430 px: one-column view with no page-level horizontal overflow.
 9. Current artificial horizon visual/behavior remains functionally unchanged.
 10. Switching right-side tabs must not trigger new backend requests.
 11. Selected graph signals remain visible/controllable after the MAVLink selector is collapsed.
+12. Theme control displays exactly `● Темна` and `○ Світла`, changes the frontend theme without reload/backend requests, and restores the saved choice after reload.
 
 ## Non-goals for this version
 
