@@ -1,0 +1,50 @@
+name: Light theme and board messages
+
+on:
+  push:
+    branches: [fix/light-theme-board-messages, main]
+    paths:
+      - index.html
+      - backend/mavlink_plot.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - tests/test_dynamic_mavlink_plot_backend.py
+      - tests/test_dynamic_mavlink_plot_ui.py
+      - tools/apply_light_theme_board_messages.py
+      - .github/workflows/light-theme-board-messages.yml
+  pull_request:
+    paths:
+      - index.html
+      - backend/mavlink_plot.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - tests/test_dynamic_mavlink_plot_backend.py
+      - tests/test_dynamic_mavlink_plot_ui.py
+      - tools/apply_light_theme_board_messages.py
+      - .github/workflows/light-theme-board-messages.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
+      - run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
+      - run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - run: python -m py_compile backend/main.py backend/mavlink_plot.py
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S | re.I)
+          with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as f:
+              f.write('\n'.join(scripts))
+              path = f.name
+          subprocess.run(['node', '--check', path], check=True)
+          PY
