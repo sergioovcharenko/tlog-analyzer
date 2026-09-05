@@ -15,6 +15,9 @@ on:
       - tests/test_dashboard_layout_v2_contract.py
       - .github/workflows/dashboard-layout-v2.yml
 
+permissions:
+  contents: write
+
 jobs:
   contract:
     runs-on: ubuntu-latest
@@ -23,10 +26,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Apply dashboard patch on feature branch
+        if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
+        run: python tools/apply_dashboard_layout_v2.py
       - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
       - run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
       - run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
       - run: python -m unittest tests.test_tx16_ui_contract -v
+      - run: python -m unittest tests.test_frontend_flow_contract -v
       - name: Inline JavaScript syntax
         run: |
           python - <<'PY'
@@ -39,3 +46,22 @@ jobs:
               path = f.name
           subprocess.run(['node', '--check', path], check=True)
           PY
+      - name: Verify patcher idempotency
+        if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
+        run: |
+          sha_before=$(sha256sum index.html | cut -d' ' -f1)
+          python tools/apply_dashboard_layout_v2.py
+          sha_after=$(sha256sum index.html | cut -d' ' -f1)
+          test "$sha_before" = "$sha_after"
+      - name: Commit generated dashboard
+        if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "feat: apply dashboard layout v2"
+          git push
