@@ -59,9 +59,28 @@ def _normalize_value(message_type, field, value):
 
 
 class MavlinkPlotCollector:
+    """Collect graphable MAVLink scalars with bounded per-series memory.
+
+    High-rate TLOGs can contain hundreds of thousands of samples. Keeping every
+    sample until build() used to make graph collection consume memory and spend
+    extra time downsampling huge arrays at the end. Each series is now compacted
+    incrementally whenever its temporary buffer reaches 2x the requested output
+    limit. The first and most recent sample remain preserved.
+    """
+
     def __init__(self, max_points_per_series=1200):
         self.max_points_per_series = max(2, int(max_points_per_series))
         self._series = {}
+        self._compact_at = self.max_points_per_series * 2
+
+    def _compact_bucket(self, bucket):
+        times, values = _downsample(
+            bucket["timestamps"],
+            bucket["values"],
+            self.max_points_per_series,
+        )
+        bucket["timestamps"] = times
+        bucket["values"] = values
 
     def add(self, message_type, fields, timestamp):
         if not isinstance(fields, dict) or not _finite_scalar(timestamp):
@@ -79,6 +98,8 @@ class MavlinkPlotCollector:
             bucket["values"].append(float(value))
             if unit and not bucket.get("unit"):
                 bucket["unit"] = unit
+            if len(bucket["values"]) >= self._compact_at:
+                self._compact_bucket(bucket)
 
     def build(self, base_timestamp):
         base = float(base_timestamp or 0.0)
