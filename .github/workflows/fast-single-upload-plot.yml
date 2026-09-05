@@ -1,0 +1,69 @@
+name: Fast single-upload plot
+
+on:
+  push:
+    branches:
+      - perf/single-upload-fast-plot
+      - main
+    paths:
+      - 'backend/**'
+      - 'index.html'
+      - 'tests/test_fast_single_upload_plot_contract.py'
+      - 'tools/apply_fast_single_upload_plot.py'
+      - '.github/workflows/fast-single-upload-plot.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply fast single-upload patch
+        if: github.ref_name == 'perf/single-upload-fast-plot'
+        run: python tools/apply_fast_single_upload_plot.py
+      - name: Fast single-upload contract
+        run: python -m unittest tests.test_fast_single_upload_plot_contract -v
+      - name: Dynamic MAVLink backend contracts
+        run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
+      - name: Dynamic MAVLink UI contracts
+        run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py backend/mavlink_plot.py
+      - name: Attitude regression
+        if: ${{ hashFiles('tests/test_attitude_dashboard_v22_contract.py') != '' }}
+        run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
+      - name: TX16 regression
+        if: ${{ hashFiles('tests/test_tx16_ui_contract.py') != '' }}
+        run: python -m unittest tests.test_tx16_ui_contract -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
+          for i,b in enumerate(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)):
+              if not b.strip():
+                  continue
+              p=Path(f'/tmp/fast-plot-{i}.js')
+              p.write_text(b,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
+      - name: Commit generated fast patch
+        if: github.ref_name == 'perf/single-upload-fast-plot'
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "perf: reuse uploaded TLOG and restore filtered analysis"
+          git push origin HEAD:${GITHUB_REF_NAME}

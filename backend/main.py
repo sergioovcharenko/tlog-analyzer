@@ -23,6 +23,7 @@ import statistics
 import threading
 import time
 import webbrowser
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile
@@ -1356,6 +1357,46 @@ def format_ned(coords):
     return ",".join(fmt(v) for v in coords[:3])
 
 
+
+
+# FAST_SINGLE_UPLOAD_PLOT_V1
+# Keep the already-uploaded TLOG briefly so the graph request does not upload it again.
+PLOT_FILE_CACHE = {}
+PLOT_FILE_CACHE_TTL_SEC = 15 * 60
+
+
+def _cleanup_plot_file_cache():
+    now = time.time()
+    expired = [
+        token for token, item in list(PLOT_FILE_CACHE.items())
+        if now - float(item.get("created", 0.0)) > PLOT_FILE_CACHE_TTL_SEC
+    ]
+    for token in expired:
+        item = PLOT_FILE_CACHE.pop(token, None) or {}
+        path = item.get("path")
+        if path and os.path.exists(path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def _register_plot_file(path):
+    _cleanup_plot_file_cache()
+    token = uuid.uuid4().hex
+    PLOT_FILE_CACHE[token] = {"path": path, "created": time.time()}
+    return token
+
+
+def _consume_plot_file(token):
+    _cleanup_plot_file_cache()
+    item = PLOT_FILE_CACHE.pop(str(token or ""), None)
+    if not item:
+        return None
+    path = item.get("path")
+    return path if path and os.path.exists(path) else None
+
+
 # ============================================================
 # HEALTH
 # ============================================================
@@ -1392,6 +1433,8 @@ async def analyze(file: UploadFile = File(...)):
             temp.write(chunk)
     finally:
         temp.close()
+
+    plot_token = None
 
     try:
         mav = mavutil.mavlink_connection(temp.name)
@@ -2126,10 +2169,19 @@ async def analyze(file: UploadFile = File(...)):
         # MAVLINK LOOP
         # ====================================================
 
-        # Read every decoded MAVLink message so the plot catalog is truly dynamic.
-        # Specialized analysis below still reacts only to the message types it knows.
+        # Fast analyzer path: decode only messages used by the flight analysis.
+        # The full dynamic MAVLink catalog is parsed later from the same server-side file.
+        needed_messages = [
+            "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "EFI_STATUS", "ALTITUDE",
+            "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "RC_CHANNELS",
+            "RADIO", "RADIO_STATUS", "ATTITUDE", "VIBRATION",
+            "TEMPERATURE", "HIGHRES_IMU", "SCALED_PRESSURE",
+            "SCALED_PRESSURE2", "SCALED_PRESSURE3", "MCU_STATUS",
+            "STATUSTEXT", "ESC_TELEMETRY_1_TO_4", "PARAM_VALUE",
+        ]
+
         while True:
-            msg = mav.recv_match(blocking=False)
+            msg = mav.recv_match(type=needed_messages, blocking=False)
 
             if msg is None:
                 break
@@ -4695,9 +4747,11 @@ async def analyze(file: UploadFile = File(...)):
 
         graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
         board_messages = build_board_messages(raw_timeline, base_t)
+        plot_token = _register_plot_file(temp.name)
 
         return {
             "success": True,
+            "plotToken": plot_token,
             "graph_data": graph_data,
             "board_messages": board_messages,
             "ai": {
@@ -4932,7 +4986,7 @@ async def analyze(file: UploadFile = File(...)):
         }
 
     finally:
-        if os.path.exists(temp.name):
+        if plot_token is None and os.path.exists(temp.name):
             try:
                 os.unlink(temp.name)
             except Exception:
@@ -4950,24 +5004,21 @@ def _open_browser():
 
 
 # LAZY_MAVLINK_PLOT_ENDPOINT
-# Heavy dynamic MAVLink catalog is intentionally separated from /analyze.
-# The browser calls this endpoint only when the user opens the graph viewer.
+# Dynamic graph parsing reuses the TLOG already uploaded by /analyze.
 @app.post("/mavlink-plot")
-async def mavlink_plot_on_demand(file: UploadFile = File(...)):
-    temp_path = None
+async def mavlink_plot_on_demand(token: str):
+    temp_path = _consume_plot_file(token)
     mav = None
+    if not temp_path:
+        return {
+            "success": False,
+            "error": "TLOG для графіка вже недоступний. Запусти аналіз файлу ще раз.",
+        }
     try:
-        suffix = Path(file.filename or "flight.tlog").suffix or ".tlog"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            temp_path = tmp.name
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                tmp.write(chunk)
-
         collector = MavlinkPlotCollector(max_points_per_series=1200)
-        base_timestamp = None
+        first_timestamp = None
+        arm_timestamp = None
+        was_armed = False
         mav = mavutil.mavlink_connection(temp_path, robust_parsing=True)
 
         while True:
@@ -4979,14 +5030,24 @@ async def mavlink_plot_on_demand(file: UploadFile = File(...)):
             if not valid_number(t_stamp) or float(t_stamp) <= 0:
                 continue
             t_stamp = float(t_stamp)
-            if base_timestamp is None:
-                base_timestamp = t_stamp
+            if first_timestamp is None:
+                first_timestamp = t_stamp
+
+            if msg_type == "HEARTBEAT" and msg.get_srcComponent() == 1:
+                armed = bool(
+                    getattr(msg, "base_mode", 0)
+                    & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
+                )
+                if armed and not was_armed and arm_timestamp is None:
+                    arm_timestamp = t_stamp
+                was_armed = armed
+
             try:
                 collector.add(msg_type, msg.to_dict(), t_stamp)
             except Exception:
                 continue
 
-        base_timestamp = float(base_timestamp or 0.0)
+        base_timestamp = float(arm_timestamp or first_timestamp or 0.0)
         return {
             "success": True,
             "mavlink_plot": collector.build(base_timestamp),
@@ -4999,9 +5060,9 @@ async def mavlink_plot_on_demand(file: UploadFile = File(...)):
                 mav.close()
         except Exception:
             pass
-        if temp_path:
+        if temp_path and os.path.exists(temp_path):
             try:
-                os.remove(temp_path)
+                os.unlink(temp_path)
             except OSError:
                 pass
 
