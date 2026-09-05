@@ -143,13 +143,14 @@ def _severity_level(severity, is_error=False, event_type=""):
 
 
 def build_board_messages(timeline_rows, base_timestamp):
+    """Return only raw ArduPilot/MAVLink STATUSTEXT received from the board."""
     base = float(base_timestamp or 0.0)
     out = []
     seen = set()
     for row in timeline_rows or []:
         if not isinstance(row, dict):
             continue
-        text = str(row.get("system_text") or row.get("analysis_text") or "").strip()
+        text = str(row.get("system_text") or "").strip()
         ts = row.get("timestamp")
         if not text or not _finite_scalar(ts):
             continue
@@ -158,6 +159,7 @@ def build_board_messages(timeline_rows, base_timestamp):
             "level": _severity_level(row.get("severity"), row.get("isError"), row.get("eventType")),
             "text": text,
             "event_type": str(row.get("eventType") or "SYSTEM"),
+            "source": "board",
         }
         key = (item["time_ms"], item["text"])
         if key in seen:

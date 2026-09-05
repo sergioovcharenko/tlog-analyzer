@@ -43,6 +43,21 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         self.assertIn("--input-bg", HTML)
         self.assertIn('[data-tlog-theme="light"]', HTML)
 
+    def test_light_theme_polishes_hardcoded_dark_sections(self):
+        self.assertIn("/* LIGHT_THEME_POLISH_V1 */", HTML)
+        for selector in (
+            '[data-tlog-theme="light"] .timeline',
+            '[data-tlog-theme="light"] .tl-header',
+            '[data-tlog-theme="light"] .repeat-alert-group',
+            '[data-tlog-theme="light"] .esc-detail',
+            '[data-tlog-theme="light"] .board-message',
+            '[data-tlog-theme="light"] .graph-viewer-chart-wrap',
+        ):
+            self.assertIn(selector, HTML)
+        self.assertIn("--light-page:#eef3f8", HTML)
+        self.assertIn("--light-panel:#ffffff", HTML)
+        self.assertIn("--light-text:#172033", HTML)
+
     def test_theme_switch_is_visible_on_upload_page(self):
         header = re.search(r'<div class="header">(.*?)</div>\s*\n\s*<div class="container">', HTML, re.S)
         self.assertIsNotNone(header)

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 HTML = Path("index.html").read_text(encoding="utf-8")
@@ -28,19 +29,24 @@ class DynamicMavlinkPlotUiTest(unittest.TestCase):
         ):
             self.assertIn(marker, HTML)
 
-    def test_board_message_panel_exists_and_is_time_bounded(self):
+    def test_board_message_panel_lists_raw_board_messages_for_whole_flight(self):
         for marker in (
             'id="boardMessagesPanel"',
             'id="boardMessagesList"',
             'ПОВІДОМЛЕННЯ БОРТА',
-            'const BOARD_MESSAGE_WINDOW_MS=5000',
+            'STATUSTEXT від борта',
             'function renderBoardMessagesAtTime(timeMs)',
             'board-message-error',
             'board-message-warning',
             'board-message-info',
             'board-message-recovery',
+            'board-message-current',
         ):
             self.assertIn(marker, HTML)
+        body = re.search(r"function renderBoardMessagesAtTime\(timeMs\)\{.*?\n\}", HTML, re.S)
+        self.assertIsNotNone(body)
+        self.assertNotIn('Math.abs(Number(m.time_ms)-timeMs)<=BOARD_MESSAGE_WINDOW_MS', body.group(0))
+        self.assertIn('messages.slice()', body.group(0))
 
     def test_graph_time_selection_updates_board_messages(self):
         self.assertIn('renderBoardMessagesAtTime(timeMs)', HTML)

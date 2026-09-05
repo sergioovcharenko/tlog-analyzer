@@ -54,6 +54,16 @@ class DynamicMavlinkPlotBackendTest(unittest.TestCase):
         self.assertEqual(msgs[0]["level"], "error")
         self.assertEqual(msgs[1]["level"], "info")
 
+    def test_board_messages_only_include_raw_board_statustext(self):
+        rows = [
+            {"timestamp": 101.0, "eventType": "SYSTEM", "system_text": "EKF variance", "analysis_text": "synthetic duplicate", "severity": 3},
+            {"timestamp": 102.0, "eventType": "ANALYSIS", "analysis_text": "Calculated antenna warning", "isError": True},
+            {"timestamp": 103.0, "eventType": "SYSTEM", "system_text": "Battery failsafe", "severity": 2},
+        ]
+        msgs = build_board_messages(rows, 100.0)
+        self.assertEqual([m["text"] for m in msgs], ["EKF variance", "Battery failsafe"])
+        self.assertTrue(all(m.get("source") == "board" for m in msgs))
+
     def test_main_will_emit_dynamic_plot_structures(self):
         main_text = Path("backend/main.py").read_text(encoding="utf-8")
         self.assertIn("MavlinkPlotCollector", main_text)
