@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/dynamic-mavlink-plot
+      - feature/streaming-mavlink-plot-performance
       - main
     paths:
       - 'backend/**'
