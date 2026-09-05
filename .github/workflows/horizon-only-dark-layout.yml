@@ -31,6 +31,15 @@ jobs:
       - name: Apply horizon-only dark layout patch
         if: github.ref_name == 'fix/horizon-only-dark-theme'
         run: python tools/apply_horizon_only_dark_layout.py
+      - name: Commit generated frontend on feature branch
+        if: github.ref_name == 'fix/horizon-only-dark-theme'
+        run: |
+          if git diff --quiet -- index.html; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'fix: move telemetry under horizon and keep dark theme'
+          git push
       - run: python -m unittest tests.test_horizon_only_dark_layout -v
       - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
       - name: Inline JavaScript syntax
@@ -51,12 +60,3 @@ jobs:
           python tools/apply_horizon_only_dark_layout.py
           after=$(sha256sum index.html | cut -d' ' -f1)
           test "$before" = "$after"
-      - name: Commit generated frontend
-        if: github.ref_name == 'fix/horizon-only-dark-theme'
-        run: |
-          if git diff --quiet -- index.html; then exit 0; fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          git commit -m 'fix: move telemetry under horizon and keep dark theme'
-          git push
