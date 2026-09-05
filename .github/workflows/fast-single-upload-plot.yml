@@ -8,7 +8,7 @@ on:
     paths:
       - 'backend/**'
       - 'index.html'
-      - 'tests/test_fast_single_upload_plot.py'
+      - 'tests/test_fast_single_upload_plot_contract.py'
       - 'tools/apply_fast_single_upload_plot.py'
       - '.github/workflows/fast-single-upload-plot.yml'
 
@@ -29,7 +29,7 @@ jobs:
         if: github.ref_name == 'perf/single-upload-fast-plot'
         run: python tools/apply_fast_single_upload_plot.py
       - name: Fast single-upload contract
-        run: python -m unittest tests.test_fast_single_upload_plot -v
+        run: python -m unittest tests.test_fast_single_upload_plot_contract -v
       - name: Dynamic MAVLink backend contracts
         run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
       - name: Dynamic MAVLink UI contracts
