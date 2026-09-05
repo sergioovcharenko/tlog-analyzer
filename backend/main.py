@@ -31,6 +31,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 import shutil
 from pymavlink import mavutil
+try:
+    from backend.mavlink_plot import MavlinkPlotCollector, build_board_messages
+except ImportError:
+    from mavlink_plot import MavlinkPlotCollector, build_board_messages
 
 app = FastAPI()
 
@@ -1614,6 +1618,9 @@ async def analyze(file: UploadFile = File(...)):
         # STATUSTEXT MAVLink2 chunks
         statustext_chunks = {}
 
+        # Dynamic chart-only catalog. Existing analysis branches remain unchanged.
+        mavlink_plot_collector = MavlinkPlotCollector(max_points_per_series=1200)
+
         def update_flight_altitude(new_alt, timestamp=None, source="UNKNOWN"):
             nonlocal curr_alt, max_alt, last_valid_alt, last_alt_timestamp, altitude_source
 
@@ -2115,23 +2122,17 @@ async def analyze(file: UploadFile = File(...)):
                 bool(thrust_match or is_serious_system_text(full_txt)),
                 False,
                 event_type,
+                severity=severity,
             )
 
         # ====================================================
         # MAVLINK LOOP
         # ====================================================
 
-        needed_messages = [
-            "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "EFI_STATUS", "ALTITUDE",
-            "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "RC_CHANNELS",
-            "RADIO", "RADIO_STATUS", "ATTITUDE", "VIBRATION",
-            "TEMPERATURE", "HIGHRES_IMU", "SCALED_PRESSURE",
-            "SCALED_PRESSURE2", "SCALED_PRESSURE3", "MCU_STATUS",
-            "STATUSTEXT", "ESC_TELEMETRY_1_TO_4", "PARAM_VALUE",
-        ]
-
+        # Read every decoded MAVLink message so the plot catalog is truly dynamic.
+        # Specialized analysis below still reacts only to the message types it knows.
         while True:
-            msg = mav.recv_match(type=needed_messages, blocking=False)
+            msg = mav.recv_match(blocking=False)
 
             if msg is None:
                 break
@@ -2141,6 +2142,11 @@ async def analyze(file: UploadFile = File(...)):
             t_stamp = getattr(msg, "_timestamp", 0.0)
 
             if t_stamp > 0:
+                try:
+                    mavlink_plot_collector.add(msg_type, msg.to_dict(), t_stamp)
+                except Exception:
+                    pass
+
                 current_timestamp = t_stamp
 
                 if first_timestamp is None:
@@ -4696,10 +4702,14 @@ async def analyze(file: UploadFile = File(...)):
             ai_verdict = "📊 ПОВНИЙ АНАЛІЗ ПОЛЬОТУ:"
 
         graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
+        mavlink_plot = mavlink_plot_collector.build(base_t)
+        board_messages = build_board_messages(raw_timeline, base_t)
 
         return {
             "success": True,
             "graph_data": graph_data,
+            "mavlink_plot": mavlink_plot,
+            "board_messages": board_messages,
             "ai": {
                 "verdict": ai_verdict,
                 "isCritical": is_critical,
