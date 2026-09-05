@@ -1,0 +1,27 @@
+name: Lazy MAVLink plot
+
+on:
+  push:
+    branches:
+      - feature/lazy-mavlink-plot
+      - main
+    paths:
+      - 'backend/**'
+      - 'index.html'
+      - 'tools/apply_lazy_mavlink_plot.py'
+      - 'tests/test_lazy_mavlink_plot.py'
+      - '.github/workflows/lazy-mavlink-plot.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Lazy plot contract
+        run: python -m unittest tests.test_lazy_mavlink_plot -v
