@@ -20,14 +20,20 @@ class ResponsiveUIContract(unittest.TestCase):
             '.timeline .tl-item{',
             'grid-template-columns:repeat(2,minmax(0,1fr))',
             '.tl-item>div::before',
-            "content:attr(data-mobile-label)",
+            'content:attr(data-mobile-label)',
+            '.timeline .sticks-detail{',
+            '.timeline-floating-header,.timeline-scrollbar-fixed{display:none!important}',
         ):
             self.assertIn(marker, HTML)
 
-    def test_mobile_labels_are_attached_to_timeline_cells(self):
+    def test_mobile_labels_match_real_timeline_column_order(self):
         self.assertIn('applyMobileTimelineLabels()', HTML)
-        self.assertIn("cell.dataset.mobileLabel", HTML)
-        for label in ('ЧАС', 'MODE', 'ALT', 'BAT', 'dBm', 'ПОВІДОМЛЕННЯ', 'АНАЛІЗ', 'TX16S'):
+        self.assertIn('cell.dataset.mobileLabel', HTML)
+        for label in (
+            'ЧАС', 'MODE', 'ALT', 'ДАЛЬНІСТЬ', 'АЗИМУТ', 'VTX / VIDEO',
+            'BAT', 'CURRENT', 'RSSI', 'dBm', 'ENGINE LOAD', 'TEMP FC / ESC',
+            'ПОВІДОМЛЕННЯ', 'АНАЛІЗ', 'TX16S', 'ДІЯ ПІЛОТА'
+        ):
             self.assertIn(label, HTML)
 
     def test_graph_map_tx16_and_mavlink_have_mobile_overrides(self):
@@ -35,8 +41,10 @@ class ResponsiveUIContract(unittest.TestCase):
             '.graph-viewer-layout{grid-template-columns:1fr}',
             '#attitudePanel{width:100%',
             '#mavlinkPlotGroups{grid-template-columns:1fr}',
-            '.map-v17-layout{grid-template-columns:1fr}',
+            '.responsive-map-layout{grid-template-columns:1fr!important}',
+            'class="responsive-map-layout"',
             '.tx16-panel',
+            'bindResponsiveGraphTouch()',
         ):
             self.assertIn(marker, HTML)
 
@@ -45,6 +53,7 @@ class ResponsiveUIContract(unittest.TestCase):
             'html,body{max-width:100%;overflow-x:hidden}',
             'min-height:44px',
             'touch-action:manipulation',
+            '#graphViewerBtn{left:8px!important;right:8px!important',
         ):
             self.assertIn(marker, HTML)
 
