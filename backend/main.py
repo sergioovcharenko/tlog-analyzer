@@ -192,6 +192,11 @@ def _build_graph_data(timeline_rows, attitude_samples=None, base_timestamp=0.0):
         if t_ms is None:
             continue
 
+        mode = str(row.get("mode") or "").strip()
+        if mode:
+            out.setdefault("mode_time_ms", []).append(t_ms)
+            out.setdefault("flight_mode", []).append(str(mode))
+
         append_pair("altitude_time_ms", "altitude_m", t_ms, _graph_numeric(row.get("alt")))
         append_pair("voltage_time_ms", "voltage_v", t_ms, row.get("volt"))
         append_pair("current_time_ms", "current_a", t_ms, row.get("curr"))

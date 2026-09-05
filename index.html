@@ -845,6 +845,9 @@ body{
 #graphNoData{padding:32px;text-align:center;color:#94a3b8}
 #attitudePanel{border:1px solid #223044;border-radius:9px;background:#0b1118;padding:14px;position:sticky;top:16px}
 .attitude-title{font-size:13px;font-weight:900;margin-bottom:10px;color:#f8fafc}
+.attitude-head-row{display:flex;align-items:stretch;justify-content:space-between;gap:10px;margin-bottom:9px}.attitude-head-row .attitude-title{display:flex;align-items:center;margin-bottom:0}
+.attitude-mode-card{min-width:170px;border:1px solid #334e68;border-radius:7px;background:#08111b;padding:6px 10px;text-align:right;font-family:monospace;box-shadow:inset 0 0 0 1px rgba(56,189,248,.05)}
+.attitude-mode-card b{display:block;color:#7dd3fc;font-size:9px;letter-spacing:.06em;line-height:1.15}.attitude-mode-card span{display:block;color:#f8fafc;font-size:16px;font-weight:900;line-height:1.2;margin-top:2px}
 #attitudeHorizon{width:264px;height:264px;max-width:100%;aspect-ratio:1;border:7px solid #27364a;border-radius:50%;overflow:hidden;position:relative;margin:0 auto 12px;background:#111827;box-shadow:inset 0 0 0 2px #0f172a,0 0 24px rgba(56,189,248,.08)}
 #attitudeScene{position:absolute;left:50%;top:50%;width:190%;height:190%;transform:translate(-50%,-50%);transform-origin:50% 50%;background:linear-gradient(to bottom,#2b78c5 0%,#4f9ad7 49.4%,#f5f5f4 49.5%,#f5f5f4 50.5%,#4c9a3f 50.6%,#2f7d32 100%);will-change:transform}
 .attitude-pitch-line{position:absolute;left:50%;top:50%;width:42%;height:2px;background:rgba(255,255,255,.94);transform:translate(-50%,-50%);box-shadow:0 1px 1px rgba(0,0,0,.45)}
@@ -1772,11 +1775,14 @@ function updateAttitudeAtTime(timeMs){
   const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
   const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
   const pointer=document.getElementById('attitudeRollPointer');
+  const modeEl=document.getElementById('attitudeFlightMode');
   const rssiEl=document.getElementById('attitudeRssi'),dbmEl=document.getElementById('attitudeDbm');
   const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
+  const modeAtTime=()=>{const tt=d.mode_time_ms||[],vv=d.flight_mode||[];if(!tt.length||!vv.length)return '—';let i=nearestSampleIndex(tt,timeMs);if(i<0)return '—';if(Number(tt[i])>timeMs&&i>0)i-=1;return String(vv[i]||'—');};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
   if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
   if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  if(modeEl)modeEl.textContent=modeAtTime();
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
     if(scene)scene.style.transform='translate(-50%,-50%)';
@@ -4934,7 +4940,10 @@ function renderTimelineTable(items,containerId){
         <div class="graph-help">Миша: наведи — перегляд моменту • клік — зафіксувати • колесо — zoom • потягни — панорама • подвійний клік — reset.</div>
       </div>
       <aside id="attitudePanel">
-        <div class="attitude-title">✈ АВІАГОРИЗОНТ</div>
+        <div class="attitude-head-row">
+          <div class="attitude-title">✈ АВІАГОРИЗОНТ</div>
+          <div class="attitude-mode-card"><b>ПОЛІТНИЙ РЕЖИМ</b><span id="attitudeFlightMode">—</span></div>
+        </div>
         <div class="attitude-radio-row">
           <div class="attitude-radio-card"><b>RSSI</b><span id="attitudeRssi">—</span></div>
           <div class="attitude-radio-card"><b>dBm</b><span id="attitudeDbm">—</span></div>
