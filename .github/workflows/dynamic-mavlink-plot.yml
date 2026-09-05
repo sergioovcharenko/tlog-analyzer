@@ -8,18 +8,26 @@ on:
     paths:
       - 'backend/**'
       - 'index.html'
+      - 'tools/apply_dynamic_mavlink_plot.py'
       - 'tests/test_dynamic_mavlink_plot_backend.py'
       - 'tests/test_dynamic_mavlink_plot_ui.py'
       - '.github/workflows/dynamic-mavlink-plot.yml'
+
+permissions:
+  contents: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply dynamic MAVLink plot patch
+        run: python tools/apply_dynamic_mavlink_plot.py
       - name: Backend contracts
         run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
       - name: Backend syntax
@@ -27,6 +35,12 @@ jobs:
       - name: UI contracts
         if: ${{ hashFiles('tests/test_dynamic_mavlink_plot_ui.py') != '' }}
         run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - name: Attitude regression
+        if: ${{ hashFiles('tests/test_attitude_dashboard_v22_contract.py') != '' }}
+        run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
+      - name: TX16 regression
+        if: ${{ hashFiles('tests/test_tx16_ui_contract.py') != '' }}
+        run: python -m unittest tests.test_tx16_ui_contract -v
       - name: Inline JavaScript syntax
         run: |
           python - <<'PY'
@@ -40,3 +54,14 @@ jobs:
               p.write_text(b,encoding='utf-8')
               subprocess.run(['node','--check',str(p)],check=True)
           PY
+      - name: Commit generated patch
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "feat: integrate dynamic MAVLink plot backend"
+          git push origin HEAD:${GITHUB_REF_NAME}
