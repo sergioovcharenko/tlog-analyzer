@@ -37,6 +37,17 @@ if 'id="attitudeRssi"' not in html:
         raise SystemExit("attitude horizon markup anchor not found")
     html = html.replace(anchor, insert + anchor, 1)
 
+# 2b) Show the current flight mode in the empty top-right area of the attitude panel.
+if 'id="attitudeFlightMode"' not in html:
+    title_anchor = '        <div class="attitude-title">✈ АВІАГОРИЗОНТ</div>'
+    title_markup = '''        <div class="attitude-head-row">
+          <div class="attitude-title">✈ АВІАГОРИЗОНТ</div>
+          <div class="attitude-mode-card"><b>ПОЛІТНИЙ РЕЖИМ</b><span id="attitudeFlightMode">—</span></div>
+        </div>'''
+    if title_anchor not in html:
+        raise SystemExit("attitude title anchor not found")
+    html = html.replace(title_anchor, title_markup, 1)
+
 # 3) Dashboard styles: top radio cards + denser 3-column telemetry grid.
 if '.attitude-radio-row{' not in html:
     css_anchor = '.attitude-values{display:grid;grid-template-columns:1fr 1fr;gap:7px;font:12px monospace}'
@@ -50,6 +61,16 @@ if '.attitude-radio-row{' not in html:
     if css_anchor not in html:
         raise SystemExit("attitude values CSS anchor not found")
     html = html.replace(css_anchor, css, 1)
+
+# Flight mode badge styling.
+if '.attitude-mode-card{' not in html:
+    css_anchor = '.attitude-title{font-size:13px;font-weight:900;margin-bottom:10px;color:#f8fafc}'
+    mode_css = '''.attitude-head-row{display:flex;align-items:stretch;justify-content:space-between;gap:10px;margin-bottom:9px}.attitude-head-row .attitude-title{display:flex;align-items:center;margin-bottom:0}
+.attitude-mode-card{min-width:170px;border:1px solid #334e68;border-radius:7px;background:#08111b;padding:6px 10px;text-align:right;font-family:monospace;box-shadow:inset 0 0 0 1px rgba(56,189,248,.05)}
+.attitude-mode-card b{display:block;color:#7dd3fc;font-size:9px;letter-spacing:.06em;line-height:1.15}.attitude-mode-card span{display:block;color:#f8fafc;font-size:16px;font-weight:900;line-height:1.2;margin-top:2px}'''
+    if css_anchor not in html:
+        raise SystemExit("attitude title CSS anchor not found")
+    html = html.replace(css_anchor, css_anchor + '\n' + mode_css, 1)
 
 # Requested threshold colors for battery/current/FC temperature/Engine Load.
 if '.att-bat-green .att-main' not in html:
@@ -111,11 +132,14 @@ new_fn = r'''function updateAttitudeAtTime(timeMs){
   const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
   const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
   const pointer=document.getElementById('attitudeRollPointer');
+  const modeEl=document.getElementById('attitudeFlightMode');
   const rssiEl=document.getElementById('attitudeRssi'),dbmEl=document.getElementById('attitudeDbm');
   const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
+  const modeAtTime=()=>{const tt=d.mode_time_ms||[],vv=d.flight_mode||[];if(!tt.length||!vv.length)return '—';let i=nearestSampleIndex(tt,timeMs);if(i<0)return '—';if(Number(tt[i])>timeMs&&i>0)i-=1;return String(vv[i]||'—');};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
   if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
   if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  if(modeEl)modeEl.textContent=modeAtTime();
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
     if(scene)scene.style.transform='translate(-50%,-50%)';
@@ -156,6 +180,19 @@ if 'append_pair("rssi_time_ms", "rssi_pct"' not in backend:
         raise SystemExit("backend radio graph anchor not found")
     backend = backend.replace(needle, addition, 1)
 
+# 6b) Export the flight mode at each timeline snapshot so the badge follows graph time.
+if 'out.setdefault("mode_time_ms", []).append(t_ms)' not in backend:
+    anchor = '        if t_ms is None:\n            continue\n\n'
+    mode_export = '''        mode = str(row.get("mode") or "").strip()
+        if mode:
+            out.setdefault("mode_time_ms", []).append(t_ms)
+            out.setdefault("flight_mode", []).append(str(mode))
+
+'''
+    if anchor not in backend:
+        raise SystemExit("backend graph time anchor not found")
+    backend = backend.replace(anchor, anchor + mode_export, 1)
+
 html_path.write_text(html, encoding="utf-8")
 backend_path.write_text(backend, encoding="utf-8")
-print("Applied attitude dashboard v2.2: warning colors, green ground, moving roll pointer, RSSI/dBm, FC temp, Current and Engine Load")
+print("Applied attitude dashboard v2.2: flight mode badge, warning colors, green ground, moving roll pointer, RSSI/dBm, FC temp, Current and Engine Load")
