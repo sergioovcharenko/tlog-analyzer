@@ -5003,6 +5003,12 @@ def _open_browser():
 
 
 
+# PREFETCH_THROTTLED_MAVLINK_PLOT_V1
+# Dynamic plot samples are capped to about 10 Hz per MAVLink message type.
+# This keeps the dynamic catalog useful while avoiding expensive msg.to_dict()
+# conversion for every high-rate ATTITUDE/IMU/ESC packet.
+PLOT_SAMPLE_INTERVAL_SEC = 0.10
+
 # LAZY_MAVLINK_PLOT_ENDPOINT
 # Dynamic graph parsing reuses the TLOG already uploaded by /analyze.
 @app.post("/mavlink-plot")
@@ -5016,6 +5022,7 @@ async def mavlink_plot_on_demand(token: str):
         }
     try:
         collector = MavlinkPlotCollector(max_points_per_series=1200)
+        last_plot_sample = {}
         first_timestamp = None
         arm_timestamp = None
         was_armed = False
@@ -5042,10 +5049,17 @@ async def mavlink_plot_on_demand(token: str):
                     arm_timestamp = t_stamp
                 was_armed = armed
 
-            try:
-                collector.add(msg_type, msg.to_dict(), t_stamp)
-            except Exception:
-                continue
+            last_sample = last_plot_sample.get(msg_type)
+            should_collect = (
+                last_sample is None
+                or t_stamp - last_sample >= PLOT_SAMPLE_INTERVAL_SEC
+            )
+            if should_collect:
+                try:
+                    collector.add(msg_type, msg.to_dict(), t_stamp)
+                    last_plot_sample[msg_type] = t_stamp
+                except Exception:
+                    continue
 
         base_timestamp = float(arm_timestamp or first_timestamp or 0.0)
         return {

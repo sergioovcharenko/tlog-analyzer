@@ -1207,28 +1207,40 @@ const API_BASE_URL = 'https://tlog-analyzer-api.onrender.com';
 
 async function ensureDynamicMavlinkPlot(result){
   if(result?.mavlink_plot?.groups)return result.mavlink_plot;
+  if(result?._mavlinkPlotPromise)return result._mavlinkPlotPromise;
   const plotToken=result?.plotToken;
   if(!plotToken)throw new Error('Сервер не повернув токен TLOG для графіка. Запусти аналіз ще раз.');
 
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),300000);
-  try{
-    const response=await fetch(API_BASE_URL+'/mavlink-plot?token='+encodeURIComponent(plotToken),{
-      method:'POST',signal:controller.signal
-    });
-    const text=await response.text();
-    if(!response.ok)throw new Error('MAVLink графік HTTP '+response.status+': '+text.slice(0,500));
-    let payload;
-    try{payload=JSON.parse(text);}catch(e){throw new Error('Сервер графіків повернув не JSON.');}
-    if(!payload||payload.success===false)throw new Error(payload?.error||'Не вдалося побудувати MAVLink графіки.');
-    result.mavlink_plot=payload.mavlink_plot||{groups:{}};
-    return result.mavlink_plot;
-  }catch(error){
-    if(error?.name==='AbortError')throw new Error('Побудова MAVLink графіків перевищила 5 хв.');
-    throw error;
-  }finally{
-    clearTimeout(timeout);
-  }
+  result._mavlinkPlotPromise=(async()=>{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),300000);
+    try{
+      const response=await fetch(API_BASE_URL+'/mavlink-plot?token='+encodeURIComponent(plotToken),{
+        method:'POST',signal:controller.signal
+      });
+      const text=await response.text();
+      if(!response.ok)throw new Error('MAVLink графік HTTP '+response.status+': '+text.slice(0,500));
+      let payload;
+      try{payload=JSON.parse(text);}catch(e){throw new Error('Сервер графіків повернув не JSON.');}
+      if(!payload||payload.success===false)throw new Error(payload?.error||'Не вдалося побудувати MAVLink графіки.');
+      result.mavlink_plot=payload.mavlink_plot||{groups:{}};
+      return result.mavlink_plot;
+    }catch(error){
+      result._mavlinkPlotPromise=null;
+      if(error?.name==='AbortError')throw new Error('Побудова MAVLink графіків перевищила 5 хв.');
+      throw error;
+    }finally{
+      clearTimeout(timeout);
+    }
+  })();
+  return result._mavlinkPlotPromise;
+}
+
+function prefetchDynamicMavlinkPlot(result){
+  if(!result?.plotToken||result?.mavlink_plot?.groups||result?._mavlinkPlotPromise)return;
+  setTimeout(()=>{
+    ensureDynamicMavlinkPlot(result).catch(()=>{});
+  },150);
 }
 
 UI.btn.addEventListener('click',async()=>{
@@ -1896,6 +1908,7 @@ function renderResults(data){
       }
     };
   }
+  prefetchDynamicMavlinkPlot(data);
   renderAnalysisFingerprint(data);
 
   const aiBlock=document.getElementById('aiBlock');
