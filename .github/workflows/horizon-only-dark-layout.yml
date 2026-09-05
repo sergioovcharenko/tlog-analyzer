@@ -1,0 +1,62 @@
+name: Horizon only dark layout
+
+on:
+  push:
+    branches: [fix/horizon-only-dark-theme, main]
+    paths:
+      - index.html
+      - tests/test_horizon_only_dark_layout.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - tools/apply_horizon_only_dark_layout.py
+      - .github/workflows/horizon-only-dark-layout.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_horizon_only_dark_layout.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - tools/apply_horizon_only_dark_layout.py
+      - .github/workflows/horizon-only-dark-layout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply horizon-only dark layout patch
+        if: github.ref_name == 'fix/horizon-only-dark-theme'
+        run: python tools/apply_horizon_only_dark_layout.py
+      - name: Commit generated frontend on feature branch
+        if: github.ref_name == 'fix/horizon-only-dark-theme'
+        run: |
+          if git diff --quiet -- index.html; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'fix: move telemetry under horizon and keep dark theme'
+          git push
+      - run: python -m unittest tests.test_horizon_only_dark_layout -v
+      - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write('\n'.join(scripts)); path=f.name
+          subprocess.run(['node','--check',path],check=True)
+          PY
+      - name: Verify patcher idempotency
+        if: github.ref_name == 'fix/horizon-only-dark-theme'
+        run: |
+          before=$(sha256sum index.html | cut -d' ' -f1)
+          python tools/apply_horizon_only_dark_layout.py
+          after=$(sha256sum index.html | cut -d' ' -f1)
+          test "$before" = "$after"

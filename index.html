@@ -1069,6 +1069,40 @@ html,body{max-width:100%;overflow-x:hidden}
 .board-message-current{outline:2px solid #38bdf8;outline-offset:-1px;box-shadow:0 0 0 3px rgba(56,189,248,.10)}
 #boardMessagesList{max-height:520px!important}
 
+
+/* HORIZON_ONLY_DARK_V1 */
+.tlog-theme-switch{display:none!important}
+#globalThemeSwitch{display:none!important}
+.graph-dashboard-summary{display:none!important}
+.graph-dashboard-summary.in-attitude{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:7px!important;
+  margin:10px 0 0!important;
+}
+.graph-dashboard-summary.in-attitude .graph-summary-item{
+  margin:0!important;
+  padding:8px 9px!important;
+  background:#080d13!important;
+  border:1px solid #253246!important;
+  box-shadow:none!important;
+}
+.graph-dashboard-summary.in-attitude .graph-summary-item span{color:#7dd3fc!important}
+.graph-dashboard-summary.in-attitude .graph-summary-item strong{color:var(--text-main);font-size:15px!important}
+.graph-summary-item.att-bat-green strong,.graph-summary-item.att-engine-green strong,.graph-summary-item.summary-success strong{color:#22c55e!important}
+.graph-summary-item.att-bat-orange strong,.graph-summary-item.att-fc-orange strong,.graph-summary-item.summary-warning strong{color:#f59e0b!important}
+.graph-summary-item.att-bat-red strong,.graph-summary-item.att-current-red strong,.graph-summary-item.att-fc-red strong,.graph-summary-item.summary-danger strong{color:#ef4444!important}
+.graph-dock-tabs{display:none!important}
+.graph-dock-panel:not([data-dock-panel="attitude"]){display:none!important}
+.graph-dock-panel[data-dock-panel="attitude"]{display:block!important}
+.graph-dashboard-dock .attitude-radio-row{display:none!important}
+.graph-dashboard-dock .attitude-flight-mode{display:none!important}
+.graph-dashboard-dock #attitudeValues{display:none!important}
+.graph-dashboard-dock #boardMessagesPanel{display:none!important}
+.graph-dashboard-dock{overflow:visible!important}
+@media (max-width:1199px){.graph-dashboard-summary.in-attitude{grid-template-columns:repeat(5,minmax(0,1fr))!important}}
+@media (max-width:767px){.graph-dashboard-summary.in-attitude{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+
 </style>
 </head>
 <body>
@@ -1081,8 +1115,8 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
   <div class="header-actions">
     <div class="tlog-theme-switch" id="globalThemeSwitch" role="group" aria-label="Тема інтерфейсу">
-      <button type="button" data-theme-choice="dark" onclick="setTlogTheme('dark')">● Темна</button>
-      <button type="button" data-theme-choice="light" onclick="setTlogTheme('light')">○ Світла</button>
+      
+      
     </div>
     <button class="btn-reset" id="resetBtn">📂 ВИБРАТИ НОВИЙ ЛОГ</button>
   </div>
@@ -2022,7 +2056,18 @@ function nearestDashboardTimelineRow(timeMs){
 function renderGraphDashboardSummary(snapshot){
   const host=document.getElementById('graphDashboardSummary');if(!host)return;
   const items=[['ЧАС',snapshot.time??'—'],['РЕЖИМ',snapshot.mode??'—'],['ВИСОТА',snapshot.altitude??'—'],['ДАЛЬНІСТЬ',snapshot.distance??'—'],['АЗИМУТ',snapshot.heading??'—'],['НАПРУГА',snapshot.voltage??'—'],['СТРУМ',snapshot.current??'—'],['RSSI',snapshot.rssi??'—'],['dBm',snapshot.dbm??'—'],['TEMP',snapshot.temperature??'—']];
-  host.innerHTML=items.map(([k,v])=>`<div class="graph-summary-item"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  const toneFor=(k,v)=>{
+    const n=parseFloat(String(v??'').replace(',','.'));
+    if(!Number.isFinite(n))return '';
+    if(k==='НАПРУГА')return typeof attitudeBatClass==='function'?attitudeBatClass(n):'';
+    if(k==='СТРУМ')return typeof attitudeCurrentClass==='function'?attitudeCurrentClass(n):'';
+    if(k==='TEMP')return typeof attitudeFcTempClass==='function'?attitudeFcTempClass(n):'';
+    if(k==='RSSI')return n>=75?'summary-success':(n>=40?'summary-warning':'summary-danger');
+    if(k==='dBm')return n>=-70?'summary-success':(n>=-85?'summary-warning':'summary-danger');
+    return '';
+  };
+  host.innerHTML=items.map(([k,v])=>`<div class="graph-summary-item ${toneFor(k,v)}"><span>${k}</span><strong>${v}</strong></div>`).join('');
+  applyHorizonOnlyDarkLayout();
 }
 function renderGraphDockTx16(timeMs){
   const host=document.getElementById('graphDockTx16Content');if(!host)return;const row=nearestDashboardTimelineRow(timeMs);
@@ -5340,8 +5385,8 @@ function renderTimelineTable(items,containerId){
       <select id="graphMetricSelect"></select>
       <button id="graphResetZoom" type="button">Скинути zoom</button>
       <div class="tlog-theme-switch" role="group" aria-label="Тема">
-        <button type="button" data-theme-choice="dark" onclick="setTlogTheme('dark')">● Темна</button>
-        <button type="button" data-theme-choice="light" onclick="setTlogTheme('light')">○ Світла</button>
+        
+        
       </div>
     </div>
     <div class="graph-viewer-layout">
@@ -5704,6 +5749,32 @@ window.addEventListener('resize',()=>{const o=document.getElementById('graphView
 })();
 </script>
 <!-- TEMP_ANALYSIS_WAIT_OVERLAY_END -->
+
+
+<script>
+function applyHorizonOnlyDarkLayout(){
+  try{localStorage.setItem('tlog-theme','dark');}catch(_e){}
+  document.documentElement.setAttribute('data-tlog-theme','dark');
+  const summary=document.getElementById('graphDashboardSummary');
+  const attitudePanel=document.getElementById('attitudePanel');
+  if(summary&&attitudePanel){
+    summary.classList.add('in-attitude');
+    if(summary.parentElement!==attitudePanel)attitudePanel.appendChild(summary);
+  }
+  const attitudeDock=document.querySelector('.graph-dock-panel[data-dock-panel="attitude"]');
+  if(attitudeDock)attitudeDock.hidden=false;
+  document.querySelectorAll('.graph-dock-panel:not([data-dock-panel="attitude"])').forEach(el=>{el.hidden=true;});
+}
+(function(){
+  let queued=false;
+  const schedule=()=>{
+    if(queued)return;queued=true;
+    requestAnimationFrame(()=>{queued=false;applyHorizonOnlyDarkLayout();});
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
+  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script>
 
 </body>
 </html>
