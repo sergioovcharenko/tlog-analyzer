@@ -1,0 +1,41 @@
+name: Dashboard layout v2
+
+on:
+  push:
+    branches: [feature/dashboard-layout-v2, main]
+    paths:
+      - index.html
+      - tools/apply_dashboard_layout_v2.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - .github/workflows/dashboard-layout-v2.yml
+  pull_request:
+    paths:
+      - index.html
+      - tools/apply_dashboard_layout_v2.py
+      - tests/test_dashboard_layout_v2_contract.py
+      - .github/workflows/dashboard-layout-v2.yml
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
+      - run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
+      - run: python -m unittest tests.test_tx16_ui_contract -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S | re.I)
+          with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as f:
+              f.write('\n'.join(scripts))
+              path = f.name
+          subprocess.run(['node', '--check', path], check=True)
+          PY
