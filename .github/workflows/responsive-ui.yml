@@ -11,14 +11,21 @@ on:
       - '.github/workflows/responsive-ui.yml'
       - 'tools/apply_responsive_v1.py'
 
+permissions:
+  contents: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply responsive v1 patch
+        run: python tools/apply_responsive_v1.py
       - name: Responsive contract
         run: python -m unittest tests.test_responsive_ui_contract -v
       - name: Existing UI regressions
@@ -39,3 +46,14 @@ jobs:
               p.write_text(b,encoding='utf-8')
               subprocess.run(['node','--check',str(p)],check=True)
           PY
+      - name: Commit generated responsive UI
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "feat: integrate responsive tablet and phone UI"
+          git push origin HEAD:${GITHUB_REF_NAME}
