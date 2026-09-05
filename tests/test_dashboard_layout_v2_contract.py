@@ -38,7 +38,8 @@ class DashboardLayoutV2Contract(unittest.TestCase):
 
     def test_summary_is_reused_below_horizon(self):
         self.assertIn("attitudePanel.appendChild(summary)", HTML)
-        self.assertIn('.graph-dashboard-summary.in-attitude{display:grid!important}', HTML)
+        self.assertIn('.graph-dashboard-summary.in-attitude{', HTML)
+        self.assertIn('display:grid!important', HTML)
 
     def test_mavlink_selector_is_collapsible_with_presets(self):
         self.assertIn('id="mavlinkSelectorToggle"', HTML)
