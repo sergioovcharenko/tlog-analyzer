@@ -8,8 +8,11 @@ HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 
 class DashboardLayoutV2Contract(unittest.TestCase):
     def test_layout_wrappers_exist(self):
+        self.assertTrue(
+            'id="graphDashboardV2"' in HTML or "root.id='graphDashboardV2'" in HTML,
+            "dashboard root must exist statically or be created by the layout initializer",
+        )
         for marker in (
-            'id="graphDashboardV2"',
             'class="graph-dashboard-summary"',
             'class="graph-dashboard-workspace"',
             'class="graph-dashboard-main"',
