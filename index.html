@@ -970,16 +970,29 @@ html,body{max-width:100%;overflow-x:hidden}
   .graph-dashboard-v2[data-mobile-active="messages"] .graph-dashboard-summary,.graph-dashboard-v2[data-mobile-active="messages"] .graph-dashboard-main,.graph-dashboard-v2[data-mobile-active="messages"] #mavlinkSelectorShell{display:none!important}
 }
 
+/* GLOBAL_THEME_SWITCH_FIX_V1 */
+.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+#globalThemeSwitch{display:inline-flex;flex:0 0 auto}
+#globalThemeSwitch button{cursor:pointer}
+@media(max-width:767px){.header{padding:14px 16px;gap:10px}.header-actions{gap:6px}#globalThemeSwitch button{min-height:40px}}
+
 </style>
 </head>
 <body>
+<!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
 <div style="position:fixed;top:10px;right:12px;z-index:9999;font:600 11px/1.2 Arial,sans-serif;padding:6px 9px;border:1px solid rgba(120,170,220,.35);border-radius:999px;background:rgba(8,18,32,.86);color:#9dc7ef;pointer-events:none;">BETA v1.0</div>
 <div class="header">
   <div>
     <h1>🚁 AI</h1>
     <p>TELEMETRY ANALYZER</p>
   </div>
-  <button class="btn-reset" id="resetBtn">📂 ВИБРАТИ НОВИЙ ЛОГ</button>
+  <div class="header-actions">
+    <div class="tlog-theme-switch" id="globalThemeSwitch" role="group" aria-label="Тема інтерфейсу">
+      <button type="button" data-theme-choice="dark" onclick="setTlogTheme('dark')">● Темна</button>
+      <button type="button" data-theme-choice="light" onclick="setTlogTheme('light')">○ Світла</button>
+    </div>
+    <button class="btn-reset" id="resetBtn">📂 ВИБРАТИ НОВИЙ ЛОГ</button>
+  </div>
 </div>
 
 <div class="container">
