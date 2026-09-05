@@ -1,0 +1,41 @@
+name: Responsive UI contract
+
+on:
+  push:
+    branches:
+      - feature/responsive-v1
+      - main
+    paths:
+      - 'index.html'
+      - 'tests/test_responsive_ui_contract.py'
+      - '.github/workflows/responsive-ui.yml'
+      - 'tools/apply_responsive_v1.py'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Responsive contract
+        run: python -m unittest tests.test_responsive_ui_contract -v
+      - name: Existing UI regressions
+        run: |
+          python -m unittest tests.test_attitude_dashboard_v22_contract -v
+          python -m unittest tests.test_tx16_ui_contract -v
+          python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
+          for i,b in enumerate(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)):
+              if not b.strip():
+                  continue
+              p=Path(f'/tmp/responsive-{i}.js')
+              p.write_text(b,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
