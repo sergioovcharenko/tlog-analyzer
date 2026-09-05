@@ -976,6 +976,99 @@ html,body{max-width:100%;overflow-x:hidden}
 #globalThemeSwitch button{cursor:pointer}
 @media(max-width:767px){.header{padding:14px 16px;gap:10px}.header-actions{gap:6px}#globalThemeSwitch button{min-height:40px}}
 
+
+/* LIGHT_THEME_POLISH_V1 */
+[data-tlog-theme="light"]{
+  --light-page:#eef3f8;
+  --light-panel:#ffffff;
+  --light-panel-2:#f7f9fc;
+  --light-text:#172033;
+  --light-muted:#5b6b80;
+  --light-border:#cbd7e6;
+  --light-accent:#0877c9;
+  --bg-main:var(--light-page);
+  --bg-card:var(--light-panel);
+  --bg-header:#f8fafc;
+  --panel-bg:var(--light-panel);
+  --panel-bg-2:var(--light-panel-2);
+  --input-bg:#ffffff;
+  --border-color:var(--light-border);
+  --border-highlight:#9fb0c6;
+  --text-main:var(--light-text);
+  --text-muted:var(--light-muted);
+  --accent:var(--light-accent);
+  --accent-hover:#075fa1;
+  --accent-glow:rgba(8,119,201,.14);
+  --graph-bg:#ffffff;
+  --graph-grid:rgba(71,85,105,.18);
+  --shadow-color:rgba(15,23,42,.08);
+}
+[data-tlog-theme="light"] body{background:var(--light-page);color:var(--light-text)}
+[data-tlog-theme="light"] .header,
+[data-tlog-theme="light"] .card,
+[data-tlog-theme="light"] .ai-box,
+[data-tlog-theme="light"] .timeline,
+[data-tlog-theme="light"] .graph-viewer-toolbar,
+[data-tlog-theme="light"] .graph-dashboard-dock,
+[data-tlog-theme="light"] .graph-summary-item,
+[data-tlog-theme="light"] .mavlink-selector-shell{background:var(--light-panel)!important;color:var(--light-text)!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .timeline{box-shadow:0 8px 22px rgba(15,23,42,.05)}
+[data-tlog-theme="light"] .tl-header{background:#e7eef7!important;color:#40536a!important;border-color:var(--light-border)!important;box-shadow:0 2px 8px rgba(15,23,42,.08)}
+[data-tlog-theme="light"] .tl-item{border-color:#dce5ef!important;color:var(--light-text)!important}
+[data-tlog-theme="light"] .tl-system{color:#24364c!important}
+[data-tlog-theme="light"] .tl-pilot{color:#0867ad!important}
+[data-tlog-theme="light"] .repeat-alert-group{background:var(--light-panel-2)!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .repeat-critical>summary{color:#b91c1c!important}
+[data-tlog-theme="light"] .repeat-attention>summary{color:#c2410c!important}
+[data-tlog-theme="light"] .repeat-warning>summary{color:#a16207!important}
+[data-tlog-theme="light"] .repeat-info>summary{color:#1d4ed8!important}
+[data-tlog-theme="light"] .esc-toggle,
+[data-tlog-theme="light"] .vib-toggle,
+[data-tlog-theme="light"] .att-toggle{background:#eef4fb!important;color:#0b67a8!important;border-color:#aebed2!important}
+[data-tlog-theme="light"] .esc-detail{background:#f6f9fc!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .esc-detail-inner{background:#ffffff!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .timeline-scrollbar-fixed::-webkit-scrollbar-track{background:#e6edf5!important}
+[data-tlog-theme="light"] .timeline-scrollbar-fixed::-webkit-scrollbar-thumb{background:#9aabc0!important}
+[data-tlog-theme="light"] .timeline-floating-header{background:#e7eef7!important;border-color:var(--light-border)!important;box-shadow:0 4px 14px rgba(15,23,42,.12)!important}
+[data-tlog-theme="light"] input,
+[data-tlog-theme="light"] select,
+[data-tlog-theme="light"] button{border-color:#aebed2}
+[data-tlog-theme="light"] .graph-viewer-chart-wrap{background:#ffffff!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .graph-help{color:#607086!important}
+[data-tlog-theme="light"] .graph-dock-tabs{background:#edf3f9!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .graph-dock-tabs button{color:#4b5f78!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] .graph-dock-tabs button.active{color:#075f9d!important;background:#dceefa!important;box-shadow:inset 0 -2px 0 #0877c9!important}
+[data-tlog-theme="light"] #boardMessagesPanel{background:#ffffff!important;color:var(--light-text)!important}
+[data-tlog-theme="light"] #boardMessagesList{scrollbar-color:#9aabc0 #edf3f8}
+[data-tlog-theme="light"] .board-message{background:#f7f9fc!important;color:#27384d!important;border:1px solid #d7e1ec;border-left-width:4px}
+[data-tlog-theme="light"] .board-message-error{background:#fff1f2!important;border-left-color:#dc2626!important;color:#7f1d1d!important}
+[data-tlog-theme="light"] .board-message-warning{background:#fff8e6!important;border-left-color:#d97706!important;color:#78350f!important}
+[data-tlog-theme="light"] .board-message-info{background:#eef7ff!important;border-left-color:#0284c7!important;color:#164e63!important}
+[data-tlog-theme="light"] .board-message-recovery{background:#eefbf2!important;border-left-color:#16a34a!important;color:#14532d!important}
+[data-tlog-theme="light"] .board-message-current{outline:2px solid #0877c9!important;outline-offset:-1px;box-shadow:0 0 0 3px rgba(8,119,201,.10)}
+[data-tlog-theme="light"] .board-message-empty{color:#607086!important}
+[data-tlog-theme="light"] .board-messages-title{color:#24364c!important}
+[data-tlog-theme="light"] .board-messages-subtitle{color:#607086!important}
+[data-tlog-theme="light"] #mavlinkPlotPanel,
+[data-tlog-theme="light"] .mavlink-message-group,
+[data-tlog-theme="light"] .mavlink-message-group>summary{background:#f7f9fc!important;color:var(--light-text)!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] #mavlinkPlotSearch{background:#ffffff!important;color:var(--light-text)!important;border-color:#aebed2!important}
+[data-tlog-theme="light"] #mapTelemetryPanel{background:#f7f9fc!important;color:var(--light-text)!important;border-color:var(--light-border)!important}
+[data-tlog-theme="light"] #mapTelemetryPanel>div:first-child{color:var(--light-text)!important}
+[data-tlog-theme="light"] #mapZoomOut,
+[data-tlog-theme="light"] #mapZoomReset,
+[data-tlog-theme="light"] #mapZoomIn,
+[data-tlog-theme="light"] #mapMode3D,
+[data-tlog-theme="light"] #map3dTop,
+[data-tlog-theme="light"] #map3dNorth,
+[data-tlog-theme="light"] #map3dEast,
+[data-tlog-theme="light"] #antennaModeManual{background:#f7f9fc!important;color:#40536a!important;border-color:#aebed2!important}
+[data-tlog-theme="light"] #antennaManualAz{background:#ffffff!important;color:var(--light-text)!important;border-color:#aebed2!important}
+[data-tlog-theme="light"] #scrollTopBtn{background:#ffffff!important;color:#24364c!important;border-color:#aebed2!important;box-shadow:0 8px 24px rgba(15,23,42,.12)!important}
+
+.board-message-current{outline:2px solid #38bdf8;outline-offset:-1px;box-shadow:0 0 0 3px rgba(56,189,248,.10)}
+#boardMessagesList{max-height:520px!important}
+
 </style>
 </head>
 <body>
@@ -5308,7 +5401,7 @@ function renderTimelineTable(items,containerId){
         <div id="attitudeValues" class="attitude-values"></div>
         <section id="boardMessagesPanel" aria-label="Повідомлення борта">
           <div class="board-messages-title">⚠ ПОВІДОМЛЕННЯ БОРТА</div>
-          <div class="board-messages-subtitle">Події в межах ±5 с від вибраного часу</div>
+          <div class="board-messages-subtitle">STATUSTEXT від борта • помилки, попередження та службові повідомлення</div>
           <div id="boardMessagesList">Немає повідомлень</div>
         </section>
       </aside>
@@ -5455,17 +5548,18 @@ function renderGraphSeries(metric){
     const scale=scales.get(s.unit||'native');if(!scale)return;const Y=v=>y1-(v-scale.min)/(scale.max-scale.min||1)*(y1-y0);let started=false;ctx.strokeStyle=s.color;ctx.lineWidth=1.9;ctx.beginPath();
     for(let i=0;i<s.times.length;i++){const t=s.times[i],v=s.values[i];if(t<viewStart||t>viewEnd||!Number.isFinite(v))continue;const xx=X(t),yy=Y(v);if(!started){ctx.moveTo(xx,yy);started=true;}else ctx.lineTo(xx,yy);}if(started)ctx.stroke();
   });
-  let lx=x0,ly=18;ctx.font='bold 10px monospace';series.slice(0,8).forEach(s=>{const text=`${s.label}${s.unit?` [${s.unit}]`:''}`;const width=Math.min(210,ctx.measureText(text).width+22);if(lx+width>x1){lx=x0;ly+=16;}ctx.fillStyle=s.color;ctx.fillRect(lx,ly-7,10,3);ctx.fillStyle='#dbeafe';ctx.fillText(text,lx+14,ly);lx+=width+8;});
-  if(groups.length>1){ctx.font='9px monospace';let yy=y0+4;groups.slice(1,MAX_DYNAMIC_UNIT_GROUPS).forEach(([unit,scale])=>{ctx.fillStyle='#64748b';ctx.fillText(`${unit}: ${scale.min.toFixed(1)}…${scale.max.toFixed(1)}`,x1-145,yy);yy+=12;});}
+  let lx=x0,ly=18;ctx.font='bold 10px monospace';series.slice(0,8).forEach(s=>{const text=`${s.label}${s.unit?` [${s.unit}]`:''}`;const width=Math.min(210,ctx.measureText(text).width+22);if(lx+width>x1){lx=x0;ly+=16;}ctx.fillStyle=s.color;ctx.fillRect(lx,ly-7,10,3);ctx.fillStyle=tlogThemeColor('--text-main','#dbeafe');ctx.fillText(text,lx+14,ly);lx+=width+8;});
+  if(groups.length>1){ctx.font='9px monospace';let yy=y0+4;groups.slice(1,MAX_DYNAMIC_UNIT_GROUPS).forEach(([unit,scale])=>{ctx.fillStyle=tlogThemeColor('--text-muted','#64748b');ctx.fillText(`${unit}: ${scale.min.toFixed(1)}…${scale.max.toFixed(1)}`,x1-145,yy);yy+=12;});}
   const sel=graphViewerState.selectedTimeMs;if(Number.isFinite(sel)&&sel>=viewStart&&sel<=viewEnd){const sx=X(sel);ctx.strokeStyle='#facc15';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(sx,y0);ctx.lineTo(sx,y1);ctx.stroke();}
 }
 
 function renderBoardMessagesAtTime(timeMs){
   const root=document.getElementById('boardMessagesList');if(!root)return;
   const messages=Array.isArray(graphViewerState.result?.board_messages)?graphViewerState.result.board_messages:[];
-  const rows=messages.filter(m=>Number.isFinite(Number(m.time_ms))&&Math.abs(Number(m.time_ms)-timeMs)<=BOARD_MESSAGE_WINDOW_MS).sort((a,b)=>Math.abs(Number(a.time_ms)-timeMs)-Math.abs(Number(b.time_ms)-timeMs)||Number(a.time_ms)-Number(b.time_ms)).slice(0,12);
-  if(!rows.length){root.innerHTML='<div class="board-message-empty">Немає повідомлень</div>';return;}
-  root.innerHTML=rows.map(m=>{const level=['error','warning','info','recovery'].includes(m.level)?m.level:'info';return `<div class="board-message board-message-${level}"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
+  const rows=messages.slice().filter(m=>Number.isFinite(Number(m.time_ms))&&String(m.text||'').trim()).sort((a,b)=>Number(a.time_ms)-Number(b.time_ms));
+  if(!rows.length){root.innerHTML='<div class="board-message-empty">Немає STATUSTEXT повідомлень від борта</div>';return;}
+  root.innerHTML=rows.map(m=>{const level=['error','warning','info','recovery'].includes(m.level)?m.level:'info';const current=Number.isFinite(Number(timeMs))&&Math.abs(Number(m.time_ms)-Number(timeMs))<=BOARD_MESSAGE_WINDOW_MS?' board-message-current':'';return `<div class="board-message board-message-${level}${current}"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
+  const current=root.querySelector('.board-message-current');if(current)current.scrollIntoView({block:'nearest'});
 }
 
 function selectGraphTime(timeMs){
