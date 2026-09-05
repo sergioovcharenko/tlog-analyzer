@@ -1204,6 +1204,34 @@ function resetForm(){
 // =========================================================
 const API_BASE_URL = 'https://tlog-analyzer-api.onrender.com';
 
+
+async function ensureDynamicMavlinkPlot(result){
+  if(result?.mavlink_plot?.groups)return result.mavlink_plot;
+  if(!selectedFile)throw new Error('TLOG файл більше не доступний. Завантаж його повторно.');
+
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),300000);
+  try{
+    const formData=new FormData();
+    formData.append('file',selectedFile,selectedFile.name);
+    const response=await fetch(API_BASE_URL+'/mavlink-plot',{
+      method:'POST',body:formData,signal:controller.signal
+    });
+    const text=await response.text();
+    if(!response.ok)throw new Error('MAVLink графік HTTP '+response.status+': '+text.slice(0,500));
+    let payload;
+    try{payload=JSON.parse(text);}catch(e){throw new Error('Сервер графіків повернув не JSON.');}
+    if(!payload||payload.success===false)throw new Error(payload?.error||'Не вдалося побудувати MAVLink графіки.');
+    result.mavlink_plot=payload.mavlink_plot||{groups:{}};
+    return result.mavlink_plot;
+  }catch(error){
+    if(error?.name==='AbortError')throw new Error('Побудова MAVLink графіків перевищила 5 хв.');
+    throw error;
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
 UI.btn.addEventListener('click',async()=>{
   if(!selectedFile)return;
   UI.btn.disabled=true;
@@ -1853,7 +1881,21 @@ function renderResults(data){
   if(graphBtn){
     const hasGraph=buildGraphMetricRegistry(data?.graph_data||{}).some(x=>x.available);
     graphBtn.hidden=!hasGraph;
-    graphBtn.onclick=()=>openGraphViewer(data);
+    graphBtn.onclick=async()=>{
+      const oldText=graphBtn.textContent;
+      graphBtn.disabled=true;
+      graphBtn.textContent='Завантаження графіків...';
+      try{
+        await ensureDynamicMavlinkPlot(data);
+        openGraphViewer(data);
+      }catch(err){
+        UI.error.textContent='❌ '+(err?.message||err);
+        UI.error.style.display='block';
+      }finally{
+        graphBtn.disabled=false;
+        graphBtn.textContent=oldText;
+      }
+    };
   }
   renderAnalysisFingerprint(data);
 
