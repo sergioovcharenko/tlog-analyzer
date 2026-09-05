@@ -90,12 +90,7 @@ if '"severity": severity,' not in main:
                     "isError": is_error,
 ''', 1)
 
-statustext_call = '''                False,
-                event_type,
-            )
-'''
 if "severity=severity" not in main:
-    # This exact call occurs inside process_complete_statustext immediately after event_type.
     marker = '''            add_event(
                 full_txt,
                 timestamp,
@@ -119,7 +114,7 @@ if "severity=severity" not in main:
         raise SystemExit("STATUSTEXT add_event anchor not found")
     main = main.replace(marker, replacement, 1)
 
-if '"mavlink_plot": mavlink_plot_collector.build(base_t)' not in main:
+if '"mavlink_plot": mavlink_plot,' not in main:
     anchor = '''        graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
 
         return {
