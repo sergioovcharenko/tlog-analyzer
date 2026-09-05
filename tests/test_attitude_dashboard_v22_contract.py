@@ -13,7 +13,7 @@ class AttitudeDashboardV22ContractTest(unittest.TestCase):
             'id="attitudeRssi"',
             'id="attitudeDbm"',
             'ТЕМПЕРАТУРА FC',
-            'СПОЖИВАННЯ СТРУМУ',
+            'CURRENT',
             'ENGINE LOAD',
         ):
             self.assertIn(marker, self.html)
@@ -69,6 +69,20 @@ class AttitudeDashboardV22ContractTest(unittest.TestCase):
         self.assertIn('${attitudeCurrentClass(current)}', self.html)
         self.assertIn('${attitudeFcTempClass(fcTemp)}', self.html)
         self.assertIn('attitude-value att-engine att-engine-green', self.html)
+
+    def test_dashboard_shows_flight_mode_for_selected_graph_time(self):
+        for marker in (
+            'id="attitudeFlightMode"',
+            'ПОЛІТНИЙ РЕЖИМ',
+            'mode_time_ms',
+            'flight_mode',
+            "document.getElementById('attitudeFlightMode')",
+        ):
+            self.assertIn(marker, self.html)
+
+    def test_backend_exports_flight_mode_graph_series(self):
+        self.assertIn('out.setdefault("mode_time_ms", []).append(t_ms)', self.backend)
+        self.assertIn('out.setdefault("flight_mode", []).append(str(mode))', self.backend)
 
 
 if __name__ == "__main__":
