@@ -43,6 +43,13 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         self.assertIn("--input-bg", HTML)
         self.assertIn('[data-tlog-theme="light"]', HTML)
 
+    def test_theme_switch_is_visible_on_upload_page(self):
+        header = re.search(r'<div class="header">(.*?)</div>\s*\n\s*<div class="container">', HTML, re.S)
+        self.assertIsNotNone(header)
+        self.assertIn('id="globalThemeSwitch"', header.group(1))
+        self.assertIn('data-theme-choice="dark"', header.group(1))
+        self.assertIn('data-theme-choice="light"', header.group(1))
+
     def test_mavlink_selector_is_collapsible_with_presets(self):
         self.assertIn('id="mavlinkSelectorToggle"', HTML)
         for preset in ("Altitude", "Power", "Radio", "Attitude", "ESC"):

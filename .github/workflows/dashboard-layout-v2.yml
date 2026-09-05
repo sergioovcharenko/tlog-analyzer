@@ -2,16 +2,18 @@ name: Dashboard layout v2
 
 on:
   push:
-    branches: [feature/dashboard-layout-v2, main]
+    branches: [feature/dashboard-layout-v2, fix/global-theme-graph-visibility, main]
     paths:
       - index.html
       - tools/apply_dashboard_layout_v2.py
+      - tools/apply_global_theme_fix.py
       - tests/test_dashboard_layout_v2_contract.py
       - .github/workflows/dashboard-layout-v2.yml
   pull_request:
     paths:
       - index.html
       - tools/apply_dashboard_layout_v2.py
+      - tools/apply_global_theme_fix.py
       - tests/test_dashboard_layout_v2_contract.py
       - .github/workflows/dashboard-layout-v2.yml
 
@@ -29,6 +31,9 @@ jobs:
       - name: Apply dashboard patch on feature branch
         if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
         run: python tools/apply_dashboard_layout_v2.py
+      - name: Apply global theme visibility fix
+        if: github.event_name == 'push' && github.ref_name == 'fix/global-theme-graph-visibility'
+        run: python tools/apply_global_theme_fix.py
       - run: python -m unittest tests.test_dashboard_layout_v2_contract -v
       - run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
       - run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
@@ -46,15 +51,22 @@ jobs:
               path = f.name
           subprocess.run(['node', '--check', path], check=True)
           PY
-      - name: Verify patcher idempotency
+      - name: Verify dashboard patcher idempotency
         if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
         run: |
           sha_before=$(sha256sum index.html | cut -d' ' -f1)
           python tools/apply_dashboard_layout_v2.py
           sha_after=$(sha256sum index.html | cut -d' ' -f1)
           test "$sha_before" = "$sha_after"
+      - name: Verify global theme patcher idempotency
+        if: github.event_name == 'push' && github.ref_name == 'fix/global-theme-graph-visibility'
+        run: |
+          sha_before=$(sha256sum index.html | cut -d' ' -f1)
+          python tools/apply_global_theme_fix.py
+          sha_after=$(sha256sum index.html | cut -d' ' -f1)
+          test "$sha_before" = "$sha_after"
       - name: Commit generated dashboard
-        if: github.event_name == 'push' && github.ref_name == 'feature/dashboard-layout-v2'
+        if: github.event_name == 'push' && (github.ref_name == 'feature/dashboard-layout-v2' || github.ref_name == 'fix/global-theme-graph-visibility')
         run: |
           if git diff --quiet -- index.html; then
             echo "No generated changes"
@@ -63,5 +75,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "feat: apply dashboard layout v2"
+          if [ "${GITHUB_REF_NAME}" = "fix/global-theme-graph-visibility" ]; then
+            git commit -m "fix: show theme switch on upload page"
+          else
+            git commit -m "feat: apply dashboard layout v2"
+          fi
           git push
