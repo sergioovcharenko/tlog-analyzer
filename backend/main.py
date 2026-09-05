@@ -31,7 +31,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 import shutil
 from pymavlink import mavutil
-from backend.mavlink_plot import MavlinkPlotCollector, build_board_messages
+try:
+    from backend.mavlink_plot import MavlinkPlotCollector, build_board_messages
+except ImportError:
+    from mavlink_plot import MavlinkPlotCollector, build_board_messages
 
 app = FastAPI()
 
