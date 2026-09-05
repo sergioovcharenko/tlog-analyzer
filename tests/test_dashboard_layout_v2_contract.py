@@ -41,6 +41,12 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         self.assertIn('.graph-dashboard-summary.in-attitude{', HTML)
         self.assertIn('display:grid!important', HTML)
 
+    def test_restore_keeps_dashboard_v2_without_global_dom_rewriter(self):
+        self.assertIn('RESTORE_DASHBOARD_V2_MOVE_SUMMARY_V1', HTML)
+        self.assertNotIn('new MutationObserver(schedule).observe(document.documentElement', HTML)
+        self.assertIn("renderGraphDashboardSummary(snapshot)", HTML)
+        self.assertIn("applyHorizonOnlyDarkLayout();", HTML)
+
     def test_mavlink_selector_is_collapsible_with_presets(self):
         self.assertIn('id="mavlinkSelectorToggle"', HTML)
         for preset in ("Altitude", "Power", "Radio", "Attitude", "ESC"):
