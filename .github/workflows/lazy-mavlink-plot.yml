@@ -10,6 +10,7 @@ on:
       - 'backend/**'
       - 'index.html'
       - 'tools/apply_lazy_mavlink_plot.py'
+      - 'tools/apply_prefetch_plot_perf.py'
       - 'tests/test_lazy_mavlink_plot.py'
       - '.github/workflows/lazy-mavlink-plot.yml'
 
@@ -29,6 +30,9 @@ jobs:
       - name: Apply lazy MAVLink plot patch
         if: github.ref_name == 'feature/lazy-mavlink-plot'
         run: python tools/apply_lazy_mavlink_plot.py
+      - name: Apply prefetched plot performance patch
+        if: github.ref_name == 'perf/prefetch-throttled-mavlink-plot'
+        run: python tools/apply_prefetch_plot_perf.py
       - name: Lazy plot contract
         run: python -m unittest tests.test_lazy_mavlink_plot -v
       - name: Dynamic MAVLink backend contracts
@@ -65,4 +69,16 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/main.py index.html
           git commit -m "perf: load dynamic MAVLink graphs on demand"
+          git push origin HEAD:${GITHUB_REF_NAME}
+      - name: Commit generated prefetched plot patch
+        if: github.ref_name == 'perf/prefetch-throttled-mavlink-plot'
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "perf: prefetch and throttle dynamic MAVLink graphs"
           git push origin HEAD:${GITHUB_REF_NAME}
