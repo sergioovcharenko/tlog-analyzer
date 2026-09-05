@@ -10,6 +10,7 @@ if MARKER in text:
 
 # Theme selector is removed from the UI. Dark remains the single supported visual mode.
 text = re.sub(r'<button[^>]*data-theme-choice=["\'](?:dark|light)["\'][^>]*>.*?</button>', '', text, flags=re.S)
+text = text.replace('● Темна', '').replace('○ Світла', '')
 
 summary_re = re.compile(r'function renderGraphDashboardSummary\(snapshot\)\{.*?\n\}', re.S)
 summary_fn = r'''function renderGraphDashboardSummary(snapshot){
