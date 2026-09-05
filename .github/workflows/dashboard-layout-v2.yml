@@ -2,7 +2,7 @@ name: Dashboard layout v2
 
 on:
   push:
-    branches: [feature/dashboard-layout-v2, fix/global-theme-graph-visibility, main]
+    branches: [feature/dashboard-layout-v2, fix/global-theme-graph-visibility, fix/restore-dashboard-v2-move-summary, main]
     paths:
       - index.html
       - tools/apply_dashboard_layout_v2.py
