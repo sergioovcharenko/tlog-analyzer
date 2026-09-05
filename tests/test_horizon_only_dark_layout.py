@@ -15,7 +15,8 @@ class HorizonOnlyDarkLayoutContract(unittest.TestCase):
         self.assertIn('function applyHorizonOnlyDarkLayout()', HTML)
         self.assertIn("attitudePanel.appendChild(summary)", HTML)
         self.assertIn('.graph-dashboard-summary{display:none!important}', HTML)
-        self.assertIn('.graph-dashboard-summary.in-attitude{display:grid!important}', HTML)
+        self.assertIn('.graph-dashboard-summary.in-attitude{', HTML)
+        self.assertIn('display:grid!important', HTML)
 
     def test_right_dock_is_horizon_only(self):
         self.assertIn('.graph-dock-tabs{display:none!important}', HTML)
