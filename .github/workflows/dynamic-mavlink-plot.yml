@@ -1,0 +1,42 @@
+name: Dynamic MAVLink plot feature
+
+on:
+  push:
+    branches:
+      - feature/dynamic-mavlink-plot
+      - main
+    paths:
+      - 'backend/**'
+      - 'index.html'
+      - 'tests/test_dynamic_mavlink_plot_backend.py'
+      - 'tests/test_dynamic_mavlink_plot_ui.py'
+      - '.github/workflows/dynamic-mavlink-plot.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Backend contracts
+        run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py backend/mavlink_plot.py
+      - name: UI contracts
+        if: ${{ hashFiles('tests/test_dynamic_mavlink_plot_ui.py') != '' }}
+        run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
+          for i,b in enumerate(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)):
+              if not b.strip():
+                  continue
+              p=Path(f'/tmp/dynamic-plot-{i}.js')
+              p.write_text(b,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
