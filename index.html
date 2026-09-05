@@ -5765,15 +5765,7 @@ function applyHorizonOnlyDarkLayout(){
   if(attitudeDock)attitudeDock.hidden=false;
   document.querySelectorAll('.graph-dock-panel:not([data-dock-panel="attitude"])').forEach(el=>{el.hidden=true;});
 }
-(function(){
-  let queued=false;
-  const schedule=()=>{
-    if(queued)return;queued=true;
-    requestAnimationFrame(()=>{queued=false;applyHorizonOnlyDarkLayout();});
-  };
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
-})();
+/* RESTORE_DASHBOARD_V2_MOVE_SUMMARY_V1 */
 </script>
 
 </body>
