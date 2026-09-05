@@ -53,6 +53,9 @@ def patch_backend(text):
 
 
 def patch_frontend(text):
+    if 'const plotToken=result?.plotToken;' in text and "/mavlink-plot?token=" in text:
+        return text
+
     old = '''async function ensureDynamicMavlinkPlot(result){\n  if(result?.mavlink_plot?.groups)return result.mavlink_plot;\n  if(!selectedFile)throw new Error('TLOG файл більше не доступний. Завантаж його повторно.');\n\n  const controller=new AbortController();\n  const timeout=setTimeout(()=>controller.abort(),300000);\n  try{\n    const formData=new FormData();\n    formData.append('file',selectedFile,selectedFile.name);\n    const response=await fetch(API_BASE_URL+'/mavlink-plot',{\n      method:'POST',body:formData,signal:controller.signal\n    });\n'''
     new = '''async function ensureDynamicMavlinkPlot(result){\n  if(result?.mavlink_plot?.groups)return result.mavlink_plot;\n  const plotToken=result?.plotToken;\n  if(!plotToken)throw new Error('Сервер не повернув токен TLOG для графіка. Запусти аналіз ще раз.');\n\n  const controller=new AbortController();\n  const timeout=setTimeout(()=>controller.abort(),300000);\n  try{\n    const response=await fetch(API_BASE_URL+'/mavlink-plot?token='+encodeURIComponent(plotToken),{\n      method:'POST',signal:controller.signal\n    });\n'''
     return replace_once(text, old, new, 'frontend lazy request')
