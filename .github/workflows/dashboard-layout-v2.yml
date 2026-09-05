@@ -33,7 +33,7 @@ jobs:
       - run: python -m unittest tests.test_dynamic_mavlink_plot_ui -v
       - run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
       - run: python -m unittest tests.test_tx16_ui_contract -v
-      - run: python -m unittest tests.test_frontend_flow_contract -v
+      - run: python -m unittest tests.test_frontend_flow -v
       - name: Inline JavaScript syntax
         run: |
           python - <<'PY'
