@@ -1,0 +1,26 @@
+name: Horizon only dark layout
+
+on:
+  push:
+    branches: [fix/horizon-only-dark-theme, main]
+    paths:
+      - index.html
+      - tests/test_horizon_only_dark_layout.py
+      - tools/apply_horizon_only_dark_layout.py
+      - .github/workflows/horizon-only-dark-layout.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_horizon_only_dark_layout.py
+      - tools/apply_horizon_only_dark_layout.py
+      - .github/workflows/horizon-only-dark-layout.yml
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest tests.test_horizon_only_dark_layout -v
