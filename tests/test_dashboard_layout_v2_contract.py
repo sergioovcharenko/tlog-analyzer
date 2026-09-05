@@ -23,47 +23,22 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         for label in ("ЧАС", "РЕЖИМ", "ВИСОТА", "ДАЛЬНІСТЬ", "АЗИМУТ", "НАПРУГА", "СТРУМ", "RSSI", "dBm"):
             self.assertIn(label, HTML)
 
-    def test_right_dock_tabs_exist(self):
-        for tab in ("Авіагоризонт", "Повідомлення", "TX16", "Дані"):
-            self.assertIn(f">{tab}<", HTML)
-        self.assertIn("setGraphDockTab", HTML)
+    def test_right_dock_is_horizon_only(self):
         self.assertIn('data-dock-panel="attitude"', HTML)
-        self.assertIn('data-dock-panel="messages"', HTML)
-        self.assertIn('data-dock-panel="tx16"', HTML)
-        self.assertIn('data-dock-panel="data"', HTML)
+        self.assertIn('.graph-dock-tabs{display:none!important}', HTML)
+        self.assertIn('.graph-dock-panel:not([data-dock-panel="attitude"]){display:none!important}', HTML)
+        self.assertIn('applyHorizonOnlyDarkLayout', HTML)
 
-    def test_theme_control_is_exact_and_persistent(self):
-        self.assertIn("● Темна", HTML)
-        self.assertIn("○ Світла", HTML)
-        self.assertIn("localStorage.getItem('tlog-theme')", HTML)
-        self.assertIn("localStorage.setItem('tlog-theme'", HTML)
-        self.assertIn("data-tlog-theme", HTML)
+    def test_dark_theme_is_single_visible_theme(self):
+        self.assertIn("localStorage.setItem('tlog-theme','dark')", HTML)
+        self.assertIn('.tlog-theme-switch{display:none!important}', HTML)
+        self.assertNotIn('○ Світла</button>', HTML)
         self.assertIn("--graph-bg", HTML)
         self.assertIn("--graph-grid", HTML)
-        self.assertIn("--input-bg", HTML)
-        self.assertIn('[data-tlog-theme="light"]', HTML)
 
-    def test_light_theme_polishes_hardcoded_dark_sections(self):
-        self.assertIn("/* LIGHT_THEME_POLISH_V1 */", HTML)
-        for selector in (
-            '[data-tlog-theme="light"] .timeline',
-            '[data-tlog-theme="light"] .tl-header',
-            '[data-tlog-theme="light"] .repeat-alert-group',
-            '[data-tlog-theme="light"] .esc-detail',
-            '[data-tlog-theme="light"] .board-message',
-            '[data-tlog-theme="light"] .graph-viewer-chart-wrap',
-        ):
-            self.assertIn(selector, HTML)
-        self.assertIn("--light-page:#eef3f8", HTML)
-        self.assertIn("--light-panel:#ffffff", HTML)
-        self.assertIn("--light-text:#172033", HTML)
-
-    def test_theme_switch_is_visible_on_upload_page(self):
-        header = re.search(r'<div class="header">(.*?)</div>\s*\n\s*<div class="container">', HTML, re.S)
-        self.assertIsNotNone(header)
-        self.assertIn('id="globalThemeSwitch"', header.group(1))
-        self.assertIn('data-theme-choice="dark"', header.group(1))
-        self.assertIn('data-theme-choice="light"', header.group(1))
+    def test_summary_is_reused_below_horizon(self):
+        self.assertIn("attitudePanel.appendChild(summary)", HTML)
+        self.assertIn('.graph-dashboard-summary.in-attitude{display:grid!important}', HTML)
 
     def test_mavlink_selector_is_collapsible_with_presets(self):
         self.assertIn('id="mavlinkSelectorToggle"', HTML)
@@ -76,10 +51,6 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         self.assertRegex(HTML, r"@media\s*\(max-width:\s*1199px\)")
         self.assertRegex(HTML, r"@media\s*\(max-width:\s*767px\)")
         self.assertIn("overflow-x:hidden", HTML.replace(" ", ""))
-        self.assertIn('data-mobile-view="overview"', HTML)
-        self.assertIn('data-mobile-view="graph"', HTML)
-        self.assertIn('data-mobile-view="attitude"', HTML)
-        self.assertIn('data-mobile-view="messages"', HTML)
 
     def test_current_horizon_hooks_are_not_replaced(self):
         for marker in (
@@ -104,16 +75,9 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         ):
             self.assertIn(marker, HTML)
 
-    def test_tab_and_theme_switches_are_frontend_only(self):
-        tab_body = re.search(r"function setGraphDockTab\([^)]*\)\{.*?\n\}", HTML, re.S)
-        self.assertIsNotNone(tab_body)
-        self.assertNotIn("fetch(", tab_body.group(0))
-        theme_body = re.search(r"function setTlogTheme\([^)]*\)\{.*?\n\}", HTML, re.S)
-        self.assertIsNotNone(theme_body)
-        self.assertNotIn("fetch(", theme_body.group(0))
-
     def test_patcher_marker_present_after_generation(self):
         self.assertIn("/* DASHBOARD_LAYOUT_V2 */", HTML)
+        self.assertIn("/* HORIZON_ONLY_DARK_V1 */", HTML)
 
 
 if __name__ == "__main__":
