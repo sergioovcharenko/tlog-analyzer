@@ -27,6 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply dynamic MAVLink plot patch
+        if: github.ref_name == 'feature/dynamic-mavlink-plot'
         run: python tools/apply_dynamic_mavlink_plot.py
       - name: Backend contracts
         run: python -m unittest tests.test_dynamic_mavlink_plot_backend -v
@@ -55,6 +56,7 @@ jobs:
               subprocess.run(['node','--check',str(p)],check=True)
           PY
       - name: Commit generated patch
+        if: github.ref_name == 'feature/dynamic-mavlink-plot'
         run: |
           if git diff --quiet -- backend/main.py index.html; then
             echo "No generated changes"
