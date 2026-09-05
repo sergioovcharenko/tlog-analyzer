@@ -31,6 +31,19 @@ class DynamicMavlinkPlotBackendTest(unittest.TestCase):
         self.assertEqual(s["values"][0], 0.0)
         self.assertEqual(s["values"][-1], 19.0)
 
+    def test_streaming_collector_bounds_memory_before_build(self):
+        limit = 64
+        c = MavlinkPlotCollector(max_points_per_series=limit)
+        for i in range(20000):
+            c.add("HIGH_RATE", {"value": float(i)}, float(i) / 100.0)
+        bucket = c._series[("HIGH_RATE", "value")]
+        self.assertLessEqual(len(bucket["values"]), limit * 2)
+        self.assertLessEqual(len(bucket["timestamps"]), limit * 2)
+        out = c.build(0.0)["groups"]["HIGH_RATE"]["value"]
+        self.assertLessEqual(len(out["values"]), limit)
+        self.assertEqual(out["values"][0], 0.0)
+        self.assertEqual(out["values"][-1], 19999.0)
+
     def test_board_messages_use_elapsed_time_and_severity(self):
         rows = [
             {"timestamp": 102.0, "eventType": "SYSTEM", "system_text": "EKF variance", "severity": 3},
