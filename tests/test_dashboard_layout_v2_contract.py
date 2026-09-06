@@ -20,14 +20,19 @@ class DashboardLayoutV2Contract(unittest.TestCase):
             'id="mavlinkSelectorShell"',
         ):
             self.assertIn(marker, HTML)
-        for label in ("ЧАС", "РЕЖИМ", "ВИСОТА", "ДАЛЬНІСТЬ", "АЗИМУТ", "НАПРУГА", "СТРУМ", "RSSI", "dBm"):
+        for label in (
+            "ПОЛІТНИЙ РЕЖИМ", "RSSI", "dBm", "ВИСОТА", "ЧАС", "НАПРУГА",
+            "ДИСТАНЦІЯ ДО HOME", "ТЕМПЕРАТУРА FC", "СТРУМ", "GROUND SPEED",
+            "ЗАГАЛЬНА ДИСТАНЦІЯ", "ENGINE LOAD",
+        ):
             self.assertIn(label, HTML)
 
-    def test_right_dock_is_horizon_only(self):
+    def test_right_dock_is_horizon_only_with_radio_status(self):
         self.assertIn('data-dock-panel="attitude"', HTML)
         self.assertIn('.graph-dock-tabs{display:none!important}', HTML)
         self.assertIn('.graph-dock-panel:not([data-dock-panel="attitude"]){display:none!important}', HTML)
         self.assertIn('applyHorizonOnlyDarkLayout', HTML)
+        self.assertIn('.graph-dashboard-dock .attitude-radio-row{display:grid!important', HTML)
 
     def test_dark_theme_is_single_visible_theme(self):
         self.assertIn("localStorage.setItem('tlog-theme','dark')", HTML)
@@ -40,6 +45,21 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         self.assertIn("attitudePanel.appendChild(summary)", HTML)
         self.assertIn('.graph-dashboard-summary.in-attitude{', HTML)
         self.assertIn('display:grid!important', HTML)
+        self.assertIn('grid-template-columns:repeat(3,minmax(0,1fr))', HTML)
+
+    def test_requested_status_rules_are_present(self):
+        self.assertIn("attitudeBatClass(n)", HTML)
+        self.assertIn("attitudeFcTempClass(n)", HTML)
+        self.assertIn("n>=80?'summary-danger'", HTML)
+        self.assertIn("k==='ENGINE LOAD'", HTML)
+        self.assertIn("rssi>=75?'summary-success'", HTML)
+        self.assertIn("dbm>=-70?'summary-success'", HTML)
+
+    def test_board_messages_include_mode_changes_and_statustext(self):
+        self.assertIn('function dashboardBoardEvents()', HTML)
+        self.assertIn('Режим змінено на', HTML)
+        self.assertIn('board_messages', HTML)
+        self.assertIn('STATUSTEXT', HTML)
 
     def test_restore_keeps_dashboard_v2_without_global_dom_rewriter(self):
         self.assertIn('RESTORE_DASHBOARD_V2_MOVE_SUMMARY_V1', HTML)
@@ -82,9 +102,10 @@ class DashboardLayoutV2Contract(unittest.TestCase):
         ):
             self.assertIn(marker, HTML)
 
-    def test_patcher_marker_present_after_generation(self):
+    def test_patcher_markers_present_after_generation(self):
         self.assertIn("/* DASHBOARD_LAYOUT_V2 */", HTML)
         self.assertIn("/* HORIZON_ONLY_DARK_V1 */", HTML)
+        self.assertIn("/* GRAPH_INFO_PANEL_V2 */", HTML)
 
 
 if __name__ == "__main__":
