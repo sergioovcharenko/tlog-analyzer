@@ -9,22 +9,32 @@ on:
       - index.html
       - backend/main.py
       - tests/test_graph_info_panel_v2_contract.py
+      - tools/apply_graph_info_panel_v2.py
       - .github/workflows/graph-info-panel-v2.yml
   pull_request:
     paths:
       - index.html
       - backend/main.py
       - tests/test_graph_info_panel_v2_contract.py
+      - tools/apply_graph_info_panel_v2.py
       - .github/workflows/graph-info-panel-v2.yml
+
+permissions:
+  contents: write
 
 jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Apply graph info panel v2 patch
+        if: github.ref_name == 'feature/graph-info-panel-v2'
+        run: python tools/apply_graph_info_panel_v2.py
       - name: Graph info panel contract
         run: python -m unittest tests.test_graph_info_panel_v2_contract -v
       - name: Backend syntax
@@ -39,3 +49,15 @@ jobs:
           Path('/tmp/inline.js').write_text('\n'.join(scripts),encoding='utf-8')
           PY
           node --check /tmp/inline.js
+      - name: Commit generated product changes
+        if: github.ref_name == 'feature/graph-info-panel-v2'
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html backend/main.py
+          git commit -m "feat: make graph rail more informative"
+          git push origin HEAD:feature/graph-info-panel-v2
