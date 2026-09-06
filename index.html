@@ -2297,8 +2297,13 @@ function updateAttitudeAtTime(timeMs){
   const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
   const modeAtTime=()=>{const tt=d.mode_time_ms||[],vv=d.flight_mode||[];if(!tt.length||!vv.length)return '—';let i=nearestSampleIndex(tt,timeMs);if(i<0)return '—';if(Number(tt[i])>timeMs&&i>0)i-=1;return String(vv[i]||'—');};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
-  if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
-  if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  const setRadioTone=(el,tone)=>{
+    const card=el?.closest('.attitude-radio-card');if(!card)return;
+    card.classList.remove('summary-success','summary-warning','summary-danger');
+    if(tone)card.classList.add(tone);
+  };
+  if(rssiEl){rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;setRadioTone(rssiEl,rssi===null?'':(rssi>=75?'summary-success':(rssi>=40?'summary-warning':'summary-danger')));}
+  if(dbmEl){dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;setRadioTone(dbmEl,dbm===null?'':(dbm>=-70?'summary-success':(dbm>=-85?'summary-warning':'summary-danger')));}
   if(modeEl)modeEl.textContent=modeAtTime();
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
