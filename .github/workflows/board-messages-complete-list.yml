@@ -33,6 +33,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Apply board message list fix
+        run: python tools/apply_board_messages_complete_list.py
       - name: Board messages contract
         run: python -m unittest tests.test_board_messages_complete_list -v
       - name: Backend syntax
@@ -51,3 +53,16 @@ jobs:
               p.write_text(script,encoding='utf-8')
               subprocess.run(['node','--check',str(p)],check=True)
           PY
+      - name: Commit generated frontend
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated frontend changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "fix: show complete board event list"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
