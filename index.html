@@ -1150,6 +1150,17 @@ html,body{max-width:100%;overflow-x:hidden}
 @media(max-width:767px){#attitudePanel .graph-dashboard-summary.in-attitude{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 </style>
 
+
+<style>
+/* BOARD_MESSAGES_COMPLETE_LIST_V1 */
+#attitudePanel .attitude-board-messages #boardMessagesList{
+  min-height:180px!important;
+  max-height:280px!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+}
+</style>
+
 </head>
 <body>
 <!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
@@ -2162,7 +2173,7 @@ function syncGraphDashboardAtTime(timeMs){
     totalDistance:formatDashboardDistance(totalDistance),
     engineLoad:engineLoad===null?'—':engineLoad.toFixed(1)+' %'
   });
-  renderGraphDockTx16(timeMs);renderGraphDockData(timeMs);renderSelectedSeriesChips();
+  renderGraphDockTx16(timeMs);renderGraphDockData(timeMs);renderBoardMessagesAtTime(timeMs);renderSelectedSeriesChips();
 }
 function ensureGraphDashboardV2(){
   const shell=document.querySelector('#graphViewerOverlay .graph-viewer-shell');if(!shell)return;
@@ -5686,18 +5697,45 @@ function dashboardBoardEvents(){
     if(!Number.isFinite(t)||!text)return;
     events.push({time_ms:t,text,level:['error','warning','info','recovery'].includes(m.level)?m.level:'info',kind:'statustext'});
   });
+
+  // Keep raw board/system text that is present in Timeline as a fallback,
+  // and expose ARM/DISARM state changes that are not necessarily STATUSTEXT.
+  const timeline=Array.isArray(result.timeline)?result.timeline:[];
+  timeline.forEach(row=>{
+    const sec=typeof timelineSeconds==='function'?timelineSeconds(row?.time):null;
+    if(sec===null)return;
+    const t=sec*1000;
+    const eventType=String(row?.eventType||'').trim().toUpperCase();
+    const systemText=String(row?.systemText||'').trim();
+    if(systemText){
+      const level=row?.isError===true||/(FAIL|LOSS|ERROR|CRASH|THRUST)/.test(eventType)?'error':(/WARN/.test(eventType)?'warning':'info');
+      events.push({time_ms:t,text:systemText,level,kind:'statustext'});
+    }
+    if(['ARM','DISARM'].includes(eventType)){
+      const text=eventType==='ARM'?'ARM — двигуни активовано':'DISARM — двигуни вимкнено';
+      events.push({time_ms:t,text,level:eventType==='DISARM'?'recovery':'info',kind:'state'});
+    }
+  });
+
   const d=result.graph_data||{},tt=Array.isArray(d.mode_time_ms)?d.mode_time_ms:[],vv=Array.isArray(d.flight_mode)?d.flight_mode:[];
   let previous=null;
   for(let i=0;i<Math.min(tt.length,vv.length);i++){
     const mode=String(vv[i]||'').trim(),t=Number(tt[i]);
     if(!mode||!Number.isFinite(t))continue;
-    if(previous!==null&&mode!==previous)events.push({time_ms:t,text:`Режим змінено на ${mode}`,level:'info',kind:'mode'});
+    if(previous===null){
+      events.push({time_ms:t,text:`Початковий режим: ${mode}`,level:'info',kind:'mode'});
+    }else if(mode!==previous){
+      events.push({time_ms:t,text:`Режим змінено на ${mode}`,level:'info',kind:'mode'});
+    }
     previous=mode;
   }
+
   const seen=new Set();
   return events.sort((a,b)=>a.time_ms-b.time_ms).filter(e=>{
     const key=Math.round(e.time_ms/100)+'|'+e.text;
-    if(seen.has(key))return false;seen.add(key);return true;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
   });
 }
 function renderBoardMessagesAtTime(timeMs){
