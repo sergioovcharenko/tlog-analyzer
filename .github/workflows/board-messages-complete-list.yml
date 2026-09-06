@@ -1,0 +1,53 @@
+name: Board messages complete list
+
+on:
+  push:
+    branches:
+      - fix/board-messages-complete-list
+    paths:
+      - index.html
+      - backend/main.py
+      - backend/mavlink_plot.py
+      - tests/test_board_messages_complete_list.py
+      - tools/apply_board_messages_complete_list.py
+      - .github/workflows/board-messages-complete-list.yml
+  pull_request:
+    paths:
+      - index.html
+      - backend/main.py
+      - backend/mavlink_plot.py
+      - tests/test_board_messages_complete_list.py
+      - tools/apply_board_messages_complete_list.py
+      - .github/workflows/board-messages-complete-list.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Board messages contract
+        run: python -m unittest tests.test_board_messages_complete_list -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py backend/mavlink_plot.py
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          text=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',text,re.S|re.I)
+          for i,script in enumerate(scripts):
+              if not script.strip():
+                  continue
+              p=Path(f'/tmp/board-{i}.js')
+              p.write_text(script,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
