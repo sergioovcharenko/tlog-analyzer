@@ -1133,6 +1133,23 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 
 </style>
+
+<style>
+/* GRAPH_INFO_PANEL_V2_STYLE */
+.graph-dashboard-dock .attitude-radio-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;margin:0 0 9px!important}
+#attitudePanel .graph-dashboard-summary.in-attitude{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important}
+#attitudePanel .graph-dashboard-summary.in-attitude .graph-summary-item{min-height:58px!important;padding:8px 9px!important}
+#attitudePanel .graph-dashboard-summary.in-attitude .graph-summary-item span{font-size:8px!important;line-height:1.2!important;white-space:normal!important}
+#attitudePanel .graph-dashboard-summary.in-attitude .graph-summary-item strong{font-size:13px!important;line-height:1.25!important}
+.attitude-radio-card.summary-success span{color:#22c55e!important}.attitude-radio-card.summary-warning span{color:#f59e0b!important}.attitude-radio-card.summary-danger span{color:#ef4444!important}
+.graph-summary-item.summary-success strong{color:#22c55e!important}.graph-summary-item.summary-warning strong{color:#f59e0b!important}.graph-summary-item.summary-danger strong{color:#ef4444!important}
+.board-message-mode{border-left-color:#60a5fa!important;background:rgba(59,130,246,.08)!important}.board-message-mode .board-message-time{color:#93c5fd!important}
+#attitudePanel .attitude-board-messages{margin-top:10px!important}
+#attitudePanel .attitude-board-messages #boardMessagesList{max-height:250px!important;overflow:auto!important}
+@media(max-width:1199px){#attitudePanel .graph-dashboard-summary.in-attitude{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(max-width:767px){#attitudePanel .graph-dashboard-summary.in-attitude{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+</style>
+
 </head>
 <body>
 <!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
@@ -2082,17 +2099,33 @@ function nearestDashboardTimelineRow(timeMs){
   const rows=Array.isArray(graphViewerState.result?.timeline)?graphViewerState.result.timeline:[];let best=null,diff=Infinity;
   rows.forEach(row=>{const sec=typeof timelineSeconds==='function'?timelineSeconds(row?.time):null;if(sec===null)return;const dd=Math.abs(sec*1000-timeMs);if(dd<diff){diff=dd;best=row;}});return best;
 }
+/* GRAPH_INFO_PANEL_V2 */
+function formatDashboardDistance(value){
+  const n=Number(value);
+  if(!Number.isFinite(n))return '—';
+  if(n>=1000)return (n/1000).toFixed(2)+' км';
+  return n.toFixed(1)+' м';
+}
 function renderGraphDashboardSummary(snapshot){
   const host=document.getElementById('graphDashboardSummary');if(!host)return;
-  const items=[['ЧАС',snapshot.time??'—'],['РЕЖИМ',snapshot.mode??'—'],['ВИСОТА',snapshot.altitude??'—'],['ДАЛЬНІСТЬ',snapshot.distance??'—'],['АЗИМУТ',snapshot.heading??'—'],['НАПРУГА',snapshot.voltage??'—'],['СТРУМ',snapshot.current??'—'],['RSSI',snapshot.rssi??'—'],['dBm',snapshot.dbm??'—'],['TEMP',snapshot.temperature??'—']];
+  const items=[
+    ['ВИСОТА',snapshot.altitude??'—'],
+    ['ЧАС',snapshot.time??'—'],
+    ['НАПРУГА',snapshot.voltage??'—'],
+    ['ДИСТАНЦІЯ ДО HOME',snapshot.distance??'—'],
+    ['ТЕМПЕРАТУРА FC',snapshot.temperature??'—'],
+    ['СТРУМ',snapshot.current??'—'],
+    ['GROUND SPEED',snapshot.groundSpeed??'—'],
+    ['ЗАГАЛЬНА ДИСТАНЦІЯ',snapshot.totalDistance??'—'],
+    ['ENGINE LOAD',snapshot.engineLoad??'—']
+  ];
   const toneFor=(k,v)=>{
     const n=parseFloat(String(v??'').replace(',','.'));
     if(!Number.isFinite(n))return '';
     if(k==='НАПРУГА')return typeof attitudeBatClass==='function'?attitudeBatClass(n):'';
-    if(k==='СТРУМ')return typeof attitudeCurrentClass==='function'?attitudeCurrentClass(n):'';
-    if(k==='TEMP')return typeof attitudeFcTempClass==='function'?attitudeFcTempClass(n):'';
-    if(k==='RSSI')return n>=75?'summary-success':(n>=40?'summary-warning':'summary-danger');
-    if(k==='dBm')return n>=-70?'summary-success':(n>=-85?'summary-warning':'summary-danger');
+    if(k==='ТЕМПЕРАТУРА FC')return typeof attitudeFcTempClass==='function'?attitudeFcTempClass(n):'';
+    if(k==='СТРУМ')return n>=80?'summary-danger':'';
+    if(k==='ENGINE LOAD')return 'summary-success';
     return '';
   };
   host.innerHTML=items.map(([k,v])=>`<div class="graph-summary-item ${toneFor(k,v)}"><span>${k}</span><strong>${v}</strong></div>`).join('');
@@ -2110,8 +2143,25 @@ function renderGraphDockData(timeMs){
   host.innerHTML='<div class="graph-dock-data-grid">'+cards.map(([k,v])=>`<div class="graph-dock-data-card"><b>${k}</b><span>${v}</span></div>`).join('')+'</div>';
 }
 function syncGraphDashboardAtTime(timeMs){
-  const row=nearestDashboardTimelineRow(timeMs),alt=dashboardSample('altitude_time_ms','altitude_m',timeMs),heading=dashboardSample('attitude_time_ms','yaw_deg',timeMs),voltage=dashboardSample('voltage_time_ms','voltage_v',timeMs),current=dashboardSample('current_time_ms','current_a',timeMs),rssi=dashboardSample('rssi_time_ms','rssi_pct',timeMs),dbm=dashboardSample('radio_time_ms','radio_dbm',timeMs),temp=dashboardSample('fc_temp_time_ms','fc_temp_c',timeMs);
-  renderGraphDashboardSummary({time:formatGraphTime(timeMs),mode:dashboardModeAtTime(timeMs),altitude:alt===null?'—':alt.toFixed(1)+' м',distance:row?.dist??'—',heading:heading===null?'—':heading.toFixed(1)+'°',voltage:voltage===null?'—':voltage.toFixed(1)+' V',current:current===null?'—':current.toFixed(1)+' A',rssi:rssi===null?'—':Math.round(rssi)+' %',dbm:dbm===null?'—':Math.round(dbm)+' dBm',temperature:temp===null?'—':temp.toFixed(1)+' °C'});
+  const row=nearestDashboardTimelineRow(timeMs),
+    alt=dashboardSample('altitude_time_ms','altitude_m',timeMs),
+    voltage=dashboardSample('voltage_time_ms','voltage_v',timeMs),
+    current=dashboardSample('current_time_ms','current_a',timeMs),
+    temp=dashboardSample('fc_temp_time_ms','fc_temp_c',timeMs),
+    groundSpeed=dashboardSample('ground_speed_time_ms','ground_speed_ms',timeMs),
+    totalDistance=dashboardSample('total_distance_time_ms','total_distance_m',timeMs),
+    engineLoad=dashboardSample('engine_load_time_ms','engine_load_pct',timeMs);
+  renderGraphDashboardSummary({
+    altitude:alt===null?'—':alt.toFixed(1)+' м',
+    time:formatGraphTime(timeMs),
+    voltage:voltage===null?'—':voltage.toFixed(1)+' V',
+    distance:row?.dist??'—',
+    temperature:temp===null?'—':temp.toFixed(1)+' °C',
+    current:current===null?'—':current.toFixed(1)+' A',
+    groundSpeed:groundSpeed===null?'—':groundSpeed.toFixed(1)+' м/с',
+    totalDistance:formatDashboardDistance(totalDistance),
+    engineLoad:engineLoad===null?'—':engineLoad.toFixed(1)+' %'
+  });
   renderGraphDockTx16(timeMs);renderGraphDockData(timeMs);renderSelectedSeriesChips();
 }
 function ensureGraphDashboardV2(){
@@ -2247,8 +2297,13 @@ function updateAttitudeAtTime(timeMs){
   const sample=(timeKey,valueKey)=>{const tt=d[timeKey]||[],vv=d[valueKey]||[],i=nearestSampleIndex(tt,timeMs);const v=i>=0?Number(vv[i]):NaN;return Number.isFinite(v)?v:null;};
   const modeAtTime=()=>{const tt=d.mode_time_ms||[],vv=d.flight_mode||[];if(!tt.length||!vv.length)return '—';let i=nearestSampleIndex(tt,timeMs);if(i<0)return '—';if(Number(tt[i])>timeMs&&i>0)i-=1;return String(vv[i]||'—');};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
-  if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
-  if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  const setRadioTone=(el,tone)=>{
+    const card=el?.closest('.attitude-radio-card');if(!card)return;
+    card.classList.remove('summary-success','summary-warning','summary-danger');
+    if(tone)card.classList.add(tone);
+  };
+  if(rssiEl){rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;setRadioTone(rssiEl,rssi===null?'':(rssi>=75?'summary-success':(rssi>=40?'summary-warning':'summary-danger')));}
+  if(dbmEl){dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;setRadioTone(dbmEl,dbm===null?'':(dbm>=-70?'summary-success':(dbm>=-85?'summary-warning':'summary-danger')));}
   if(modeEl)modeEl.textContent=modeAtTime();
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
@@ -5475,7 +5530,7 @@ function renderTimelineTable(items,containerId){
         <div id="attitudeValues" class="attitude-values"></div>
         <section id="boardMessagesPanel" aria-label="Повідомлення борта">
           <div class="board-messages-title">⚠ ПОВІДОМЛЕННЯ БОРТА</div>
-          <div class="board-messages-subtitle">STATUSTEXT від борта • помилки, попередження та службові повідомлення</div>
+          <div class="board-messages-subtitle">Режими польоту + STATUSTEXT від борта • помилки, попередження та службові повідомлення</div>
           <div id="boardMessagesList">Немає повідомлень</div>
         </section>
       </aside>
@@ -5627,12 +5682,34 @@ function renderGraphSeries(metric){
   const sel=graphViewerState.selectedTimeMs;if(Number.isFinite(sel)&&sel>=viewStart&&sel<=viewEnd){const sx=X(sel);ctx.strokeStyle='#facc15';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(sx,y0);ctx.lineTo(sx,y1);ctx.stroke();}
 }
 
+function dashboardBoardEvents(){
+  const result=graphViewerState.result||{};
+  const events=[];
+  const raw=Array.isArray(result.board_messages)?result.board_messages:[];
+  raw.forEach(m=>{
+    const t=Number(m?.time_ms),text=String(m?.text||'').trim();
+    if(!Number.isFinite(t)||!text)return;
+    events.push({time_ms:t,text,level:['error','warning','info','recovery'].includes(m.level)?m.level:'info',kind:'statustext'});
+  });
+  const d=result.graph_data||{},tt=Array.isArray(d.mode_time_ms)?d.mode_time_ms:[],vv=Array.isArray(d.flight_mode)?d.flight_mode:[];
+  let previous=null;
+  for(let i=0;i<Math.min(tt.length,vv.length);i++){
+    const mode=String(vv[i]||'').trim(),t=Number(tt[i]);
+    if(!mode||!Number.isFinite(t))continue;
+    if(previous!==null&&mode!==previous)events.push({time_ms:t,text:`Режим змінено на ${mode}`,level:'info',kind:'mode'});
+    previous=mode;
+  }
+  const seen=new Set();
+  return events.sort((a,b)=>a.time_ms-b.time_ms).filter(e=>{
+    const key=Math.round(e.time_ms/100)+'|'+e.text;
+    if(seen.has(key))return false;seen.add(key);return true;
+  });
+}
 function renderBoardMessagesAtTime(timeMs){
   const root=document.getElementById('boardMessagesList');if(!root)return;
-  const messages=Array.isArray(graphViewerState.result?.board_messages)?graphViewerState.result.board_messages:[];
-  const rows=messages.slice().filter(m=>Number.isFinite(Number(m.time_ms))&&String(m.text||'').trim()).sort((a,b)=>Number(a.time_ms)-Number(b.time_ms));
-  if(!rows.length){root.innerHTML='<div class="board-message-empty">Немає STATUSTEXT повідомлень від борта</div>';return;}
-  root.innerHTML=rows.map(m=>{const level=['error','warning','info','recovery'].includes(m.level)?m.level:'info';const current=Number.isFinite(Number(timeMs))&&Math.abs(Number(m.time_ms)-Number(timeMs))<=BOARD_MESSAGE_WINDOW_MS?' board-message-current':'';return `<div class="board-message board-message-${level}${current}"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
+  const rows=dashboardBoardEvents();
+  if(!rows.length){root.innerHTML='<div class="board-message-empty">Немає повідомлень борта або перемикань режиму</div>';return;}
+  root.innerHTML=rows.map(m=>{const current=Number.isFinite(Number(timeMs))&&Math.abs(Number(m.time_ms)-Number(timeMs))<=BOARD_MESSAGE_WINDOW_MS?' board-message-current':'';const modeClass=m.kind==='mode'?' board-message-mode':'';return `<div class="board-message board-message-${m.level}${modeClass}${current}"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
   const current=root.querySelector('.board-message-current');if(current)current.scrollIntoView({block:'nearest'});
 }
 

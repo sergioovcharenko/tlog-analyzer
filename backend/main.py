@@ -1,6 +1,7 @@
 # v1.1 «Швидкість» — safe performance branch; core analysis calculations preserved.
 # V23.31: backend logic unchanged; distance display logic remains UI-only in HTML.
 # V23.26 — power-priority diagnostics + exact per-flight battery statistics
+# GRAPH_INFO_PANEL_V2_BACKEND — graph rail adds ground speed + travelled distance telemetry.
 # V23.28 — clearer powertrain wording; competing-cause logic preserved
 # ============================================================
 # TLOG ANALYZER V23
@@ -210,6 +211,8 @@ def _build_graph_data(timeline_rows, attitude_samples=None, base_timestamp=0.0):
         append_pair("radio_time_ms", "radio_dbm", t_ms, row.get("dbm"))
         append_pair("fc_temp_time_ms", "fc_temp_c", t_ms, row.get("temp"))
         append_pair("vertical_speed_time_ms", "vertical_speed_down_ms", t_ms, row.get("verticalSpeedDown"))
+        append_pair("ground_speed_time_ms", "ground_speed_ms", t_ms, row.get("groundSpeed"))
+        append_pair("total_distance_time_ms", "total_distance_m", t_ms, row.get("totalDistance"))
 
         rc = row.get("rcChannels") or {}
         if isinstance(rc, dict):
@@ -1492,6 +1495,9 @@ async def analyze(file: UploadFile = File(...)):
         curr_rssi_pct = 0
         curr_dbm = 0
         curr_vertical_speed_down = None
+        curr_ground_speed = None
+        total_distance_travelled = 0.0
+        last_ground_speed_timestamp = None
 
         # LAND analysis
         land_params = {
@@ -1854,6 +1860,8 @@ async def analyze(file: UploadFile = File(...)):
                     "curr": round(curr_amp, 1) if curr_amp >= 0 else None,
                     # Engine Load = EFI_STATUS.engine_load у відсотках.
                     "engineLoad": round(curr_engine_load, 1) if valid_number(curr_engine_load) else None,
+                    "groundSpeed": round(curr_ground_speed, 2) if valid_number(curr_ground_speed) else None,
+                    "totalDistance": round(total_distance_travelled, 1),
                     "rssi": curr_rssi_pct if curr_rssi_pct > 0 else None,
                     "dbm": round(curr_dbm) if curr_dbm != 0 else None,
                     "temp": round(curr_temp, 1) if curr_temp is not None else None,
@@ -1917,6 +1925,8 @@ async def analyze(file: UploadFile = File(...)):
                     "curr": round(curr_amp, 1) if curr_amp >= 0 else None,
                     # Engine Load = EFI_STATUS.engine_load у відсотках.
                     "engineLoad": round(curr_engine_load, 1) if valid_number(curr_engine_load) else None,
+                    "groundSpeed": round(curr_ground_speed, 2) if valid_number(curr_ground_speed) else None,
+                    "totalDistance": round(total_distance_travelled, 1),
                     "rssi": curr_rssi_pct if curr_rssi_pct > 0 else None,
                     "dbm": round(curr_dbm) if curr_dbm != 0 else None,
                     "temp": round(curr_temp, 1) if curr_temp is not None else None,
@@ -2381,10 +2391,14 @@ async def analyze(file: UploadFile = File(...)):
                     )
 
                 if valid_number(msg.groundspeed):
-                    max_speed = max(
-                        max_speed,
-                        float(msg.groundspeed),
-                    )
+                    ground_speed = max(0.0, float(msg.groundspeed))
+                    max_speed = max(max_speed, ground_speed)
+                    if last_ground_speed_timestamp is not None and is_currently_armed:
+                        ground_dt = current_timestamp - last_ground_speed_timestamp
+                        if 0.0 < ground_dt <= 5.0:
+                            total_distance_travelled += ground_speed * ground_dt
+                    curr_ground_speed = ground_speed
+                    last_ground_speed_timestamp = current_timestamp
 
                 # VFR_HUD.throttle залишаємо лише як окрему команду throttle / maxThrottle.
                 # Це НЕ Engine Load і не повинно підміняти EFI_STATUS.engine_load.
