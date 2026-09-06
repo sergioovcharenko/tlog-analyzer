@@ -1,0 +1,47 @@
+name: Graph horizon board messages
+on:
+  push:
+    branches: ["fix/graph-horizon-board-messages", "main"]
+    paths:
+      - index.html
+      - tools/apply_graph_horizon_board_messages.py
+      - tests/test_graph_horizon_board_messages.py
+      - .github/workflows/graph-horizon-board-messages.yml
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply layout patch
+        if: github.ref_name == 'fix/graph-horizon-board-messages'
+        run: python tools/apply_graph_horizon_board_messages.py
+      - name: Commit generated frontend
+        if: github.ref_name == 'fix/graph-horizon-board-messages'
+        run: |
+          if ! git diff --quiet -- index.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "fix: place board messages under attitude horizon"
+            git push
+          fi
+      - run: python -m unittest tests.test_graph_horizon_board_messages -v
+      - run: python -m unittest tests.test_attitude_dashboard_v22_contract -v
+      - run: python -m unittest tests.test_tx16_ui_contract -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          s=Path('index.html').read_text(encoding='utf-8')
+          blocks=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)
+          js='\n'.join(blocks)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write(js); name=f.name
+          subprocess.run(['node','--check',name],check=True)
+          PY
