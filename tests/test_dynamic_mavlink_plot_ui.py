@@ -29,13 +29,15 @@ class DynamicMavlinkPlotUiTest(unittest.TestCase):
         ):
             self.assertIn(marker, HTML)
 
-    def test_board_message_panel_lists_raw_board_messages_for_whole_flight(self):
+    def test_board_message_panel_lists_board_messages_and_mode_changes_for_whole_flight(self):
         for marker in (
             'id="boardMessagesPanel"',
             'id="boardMessagesList"',
             'ПОВІДОМЛЕННЯ БОРТА',
             'STATUSTEXT від борта',
+            'function dashboardBoardEvents()',
             'function renderBoardMessagesAtTime(timeMs)',
+            'Режим змінено на',
             'board-message-error',
             'board-message-warning',
             'board-message-info',
@@ -46,7 +48,7 @@ class DynamicMavlinkPlotUiTest(unittest.TestCase):
         body = re.search(r"function renderBoardMessagesAtTime\(timeMs\)\{.*?\n\}", HTML, re.S)
         self.assertIsNotNone(body)
         self.assertNotIn('Math.abs(Number(m.time_ms)-timeMs)<=BOARD_MESSAGE_WINDOW_MS', body.group(0))
-        self.assertIn('messages.slice()', body.group(0))
+        self.assertIn('dashboardBoardEvents()', body.group(0))
 
     def test_graph_time_selection_updates_board_messages(self):
         self.assertIn('renderBoardMessagesAtTime(timeMs)', HTML)
