@@ -1,0 +1,41 @@
+name: Graph info panel v2
+
+on:
+  push:
+    branches:
+      - feature/graph-info-panel-v2
+      - main
+    paths:
+      - index.html
+      - backend/main.py
+      - tests/test_graph_info_panel_v2_contract.py
+      - .github/workflows/graph-info-panel-v2.yml
+  pull_request:
+    paths:
+      - index.html
+      - backend/main.py
+      - tests/test_graph_info_panel_v2_contract.py
+      - .github/workflows/graph-info-panel-v2.yml
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Graph info panel contract
+        run: python -m unittest tests.test_graph_info_panel_v2_contract -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',text,re.S|re.I)
+          Path('/tmp/inline.js').write_text('\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/inline.js
