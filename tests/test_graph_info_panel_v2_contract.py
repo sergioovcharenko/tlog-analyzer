@@ -33,6 +33,13 @@ class GraphInfoPanelV2Contract(unittest.TestCase):
     def test_current_warning_is_red_at_80_amps_or_more(self):
         self.assertIn("n>=80?'summary-danger'", INDEX)
 
+    def test_radio_cards_keep_color_threshold_logic(self):
+        self.assertIn("const setRadioTone=(el,tone)=>", INDEX)
+        self.assertIn("rssi>=75?'summary-success'", INDEX)
+        self.assertIn("rssi>=40?'summary-warning':'summary-danger'", INDEX)
+        self.assertIn("dbm>=-70?'summary-success'", INDEX)
+        self.assertIn("dbm>=-85?'summary-warning':'summary-danger'", INDEX)
+
     def test_board_panel_merges_mode_changes_with_board_messages(self):
         self.assertIn("function dashboardBoardEvents", INDEX)
         self.assertIn("Режим змінено на", INDEX)
