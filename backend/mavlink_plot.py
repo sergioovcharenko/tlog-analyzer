@@ -143,12 +143,7 @@ def _severity_level(severity, is_error=False, event_type=""):
 
 
 def _important_board_message_level(text):
-    """Upgrade known ArduPilot fault/navigation STATUSTEXT for the graph panel.
-
-    ArduPilot can emit operationally important text with MAV_SEVERITY_INFO or
-    NOTICE, so severity alone is not enough for a useful post-flight display.
-    This only affects presentation; the original STATUSTEXT is kept verbatim.
-    """
+    """Upgrade known ArduPilot fault/navigation STATUSTEXT for the graph panel."""
     lower = str(text or "").lower()
     error_tokens = (
         "crash:",
@@ -173,6 +168,14 @@ def _important_board_message_level(text):
     return None
 
 
+def _stronger_board_level(base_level, text_level):
+    """Only upgrade visual severity; never downgrade an original MAVLink severity."""
+    rank = {"recovery": 0, "info": 1, "warning": 2, "error": 3}
+    if text_level is None:
+        return base_level
+    return text_level if rank.get(text_level, 1) > rank.get(base_level, 1) else base_level
+
+
 def build_board_messages(timeline_rows, base_timestamp):
     """Return raw ArduPilot/MAVLink STATUSTEXT received from the board."""
     base = float(base_timestamp or 0.0)
@@ -185,11 +188,12 @@ def build_board_messages(timeline_rows, base_timestamp):
         ts = row.get("timestamp")
         if not text or not _finite_scalar(ts):
             continue
-        level = _important_board_message_level(text) or _severity_level(
+        base_level = _severity_level(
             row.get("severity"),
             row.get("is_error") or row.get("isError"),
             row.get("eventType"),
         )
+        level = _stronger_board_level(base_level, _important_board_message_level(text))
         item = {
             "time_ms": int(round((float(ts) - base) * 1000.0)),
             "level": level,
