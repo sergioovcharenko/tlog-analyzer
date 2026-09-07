@@ -1071,6 +1071,8 @@ html,body{max-width:100%;overflow-x:hidden}
 [data-tlog-theme="light"] #scrollTopBtn{background:#ffffff!important;color:#24364c!important;border-color:#aebed2!important;box-shadow:0 8px 24px rgba(15,23,42,.12)!important}
 
 .board-message-current{outline:2px solid #38bdf8;outline-offset:-1px;box-shadow:0 0 0 3px rgba(56,189,248,.10)}
+.board-message[data-board-time]{cursor:pointer;transition:background .12s ease,transform .12s ease}
+.board-message[data-board-time]:hover{filter:brightness(1.14);transform:translateX(1px)}
 #boardMessagesList{max-height:520px!important}
 
 
@@ -5903,6 +5905,12 @@ function renderGraphSeries(metric){
   const sel=graphViewerState.selectedTimeMs;if(Number.isFinite(sel)&&sel>=viewStart&&sel<=viewEnd){const sx=X(sel);ctx.strokeStyle='#facc15';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(sx,y0);ctx.lineTo(sx,y1);ctx.stroke();}
 }
 
+function boardMessageLevelFromText(text,fallback='info'){
+  const lower=String(text||'').toLowerCase();
+  if(/crash:|potential thrust loss|thrust loss/.test(lower))return 'error';
+  if(/ekf variance|stopped aiding|need position estimate|requires position|smartrtl deactivated|smartrtl failed|bad position|buffer full|prearm:/.test(lower))return 'warning';
+  return fallback;
+}
 function dashboardBoardEvents(){
   const result=graphViewerState.result||{};
   const events=[];
@@ -5910,7 +5918,8 @@ function dashboardBoardEvents(){
   raw.forEach(m=>{
     const t=Number(m?.time_ms),text=String(m?.text||'').trim();
     if(!Number.isFinite(t)||!text)return;
-    events.push({time_ms:t,text,level:['error','warning','info','recovery'].includes(m.level)?m.level:'info',kind:'statustext'});
+    const rawLevel=['error','warning','info','recovery'].includes(m.level)?m.level:'info';
+    events.push({time_ms:t,text,level:boardMessageLevelFromText(text,rawLevel),kind:'statustext'});
   });
 
   // Keep raw board/system text that is present in Timeline as a fallback,
@@ -5923,7 +5932,8 @@ function dashboardBoardEvents(){
     const eventType=String(row?.eventType||'').trim().toUpperCase();
     const systemText=String(row?.systemText||'').trim();
     if(systemText){
-      const level=row?.isError===true||/(FAIL|LOSS|ERROR|CRASH|THRUST)/.test(eventType)?'error':(/WARN/.test(eventType)?'warning':'info');
+      const baseLevel=row?.isError===true||/(FAIL|LOSS|ERROR|CRASH|THRUST)/.test(eventType)?'error':(/WARN/.test(eventType)?'warning':'info');
+      const level=boardMessageLevelFromText(systemText,baseLevel);
       events.push({time_ms:t,text:systemText,level,kind:'statustext'});
     }
     if(['ARM','DISARM'].includes(eventType)){
@@ -5957,7 +5967,13 @@ function renderBoardMessagesAtTime(timeMs){
   const root=document.getElementById('boardMessagesList');if(!root)return;
   const rows=dashboardBoardEvents();
   if(!rows.length){root.innerHTML='<div class="board-message-empty">Немає повідомлень борта або перемикань режиму</div>';return;}
-  root.innerHTML=rows.map(m=>{const current=Number.isFinite(Number(timeMs))&&Math.abs(Number(m.time_ms)-Number(timeMs))<=BOARD_MESSAGE_WINDOW_MS?' board-message-current':'';const modeClass=m.kind==='mode'?' board-message-mode':'';return `<div class="board-message board-message-${m.level}${modeClass}${current}"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
+  root.innerHTML=rows.map(m=>{const current=Number.isFinite(Number(timeMs))&&Math.abs(Number(m.time_ms)-Number(timeMs))<=BOARD_MESSAGE_WINDOW_MS?' board-message-current':'';const modeClass=m.kind==='mode'?' board-message-mode':'';return `<div class="board-message board-message-${m.level}${modeClass}${current}" data-board-time="${Number(m.time_ms)}" title="Перейти до цього моменту на графіку"><span class="board-message-time">${formatGraphTime(Number(m.time_ms))}</span>${dynamicEscapeHtml(m.text)}</div>`;}).join('');
+  root.querySelectorAll('[data-board-time]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      graphViewerState.pinned=true;
+      selectGraphTime(Number(el.dataset.boardTime));
+    });
+  });
   const current=root.querySelector('.board-message-current');if(current)current.scrollIntoView({block:'nearest'});
 }
 
