@@ -1,0 +1,58 @@
+name: Indexed TLOG fast path
+
+on:
+  push:
+    branches:
+      - feature/indexed-tlog-fast-path
+    paths:
+      - backend/indexed_tlog.py
+      - backend/main.py
+      - tests/test_indexed_tlog.py
+      - tests/test_indexed_tlog_integration_contract.py
+      - tests/test_indexed_tlog_fallback_contract.py
+      - tools/apply_indexed_tlog_fast_path.py
+      - .github/workflows/indexed-tlog-fast-path.yml
+  pull_request:
+    paths:
+      - backend/indexed_tlog.py
+      - backend/main.py
+      - tests/test_indexed_tlog.py
+      - tests/test_indexed_tlog_integration_contract.py
+      - tests/test_indexed_tlog_fallback_contract.py
+      - tools/apply_indexed_tlog_fast_path.py
+      - .github/workflows/indexed-tlog-fast-path.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Apply indexed TLOG integration
+        run: python tools/apply_indexed_tlog_fast_path.py
+      - name: Run indexed TLOG unit tests
+        run: python -m unittest tests.test_indexed_tlog -v
+      - name: Run indexed TLOG integration contract
+        run: python -m unittest tests.test_indexed_tlog_integration_contract -v
+      - name: Run indexed TLOG fallback contract
+        run: python -m unittest tests.test_indexed_tlog_fallback_contract -v
+      - name: Compile backend
+        run: python -m py_compile backend/main.py backend/indexed_tlog.py
+      - name: Commit generated integration
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py
+          git commit -m "perf: use indexed EFI_STATUS sampling"
+          git push
