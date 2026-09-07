@@ -4,6 +4,10 @@ path = Path("backend/main.py")
 text = path.read_text(encoding="utf-8")
 original = text
 
+if "PERFORMANCE_TIMINGS_V1" in text and '"performance": _perf' in text:
+    print("Backend performance timings already applied")
+    raise SystemExit(0)
+
 old = '''@app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     # v1.1 «Швидкість»: preserve v1.0 chunked upload; calculation algorithms unchanged.'''
