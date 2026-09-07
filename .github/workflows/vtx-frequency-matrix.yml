@@ -1,0 +1,30 @@
+name: VTX frequency matrix
+
+on:
+  push:
+    branches:
+      - feature/vtx-frequency-matrix
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run VTX matrix contract
+        run: python -m unittest tests/test_vtx_frequency_matrix.py -v
+      - name: Check inline JavaScript syntax
+        if: success()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write('\n'.join(scripts)); path=f.name
+          subprocess.run(['node','--check',path],check=True)
+          PY
