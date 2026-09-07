@@ -1428,6 +1428,11 @@ def offline_index():
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
+    # PERFORMANCE_TIMINGS_V1 — lightweight stage profiling; telemetry calculations unchanged.
+    _perf_total_start = time.perf_counter()
+    _perf_upload_start = _perf_total_start
+    _perf = {}
+
     # v1.1 «Швидкість»: preserve v1.0 chunked upload; calculation algorithms unchanged.
     # v1.0 «Швидкість»: copy the uploaded TLOG in chunks instead of creating
     # a second full-size bytes object in RAM. Parsing and calculation logic below
@@ -1442,6 +1447,10 @@ async def analyze(file: UploadFile = File(...)):
             temp.write(chunk)
     finally:
         temp.close()
+
+    _perf["upload_ms"] = round((time.perf_counter() - _perf_upload_start) * 1000.0, 1)
+    _perf["file_size_mb"] = round(os.path.getsize(temp.name) / (1024.0 * 1024.0), 2)
+    _perf_parse_start = time.perf_counter()
 
     plot_token = None
 
@@ -3697,6 +3706,9 @@ async def analyze(file: UploadFile = File(...)):
 
             raw_timeline.sort(key=lambda row: row.get("timestamp", 0.0))
 
+        _perf["parse_rules_ms"] = round((time.perf_counter() - _perf_parse_start) * 1000.0, 1)
+        _perf_timeline_start = time.perf_counter()
+
         # Estimate antenna pointing from NED position azimuth + dBm.
         antenna_analysis = analyze_antenna_direction(raw_timeline, first_flight_arm_timestamp)
 
@@ -3757,6 +3769,8 @@ async def analyze(file: UploadFile = File(...)):
                 }
             )
 
+        _perf["timeline_ms"] = round((time.perf_counter() - _perf_timeline_start) * 1000.0, 1)
+
         # Display
         rssi_percent = (
             round((min_rssi / 254.0) * 100)
@@ -3796,6 +3810,7 @@ async def analyze(file: UploadFile = File(...)):
         # AI / FLIGHT ANALYSIS
         # ====================================================
 
+        _perf_summary_start = time.perf_counter()
         ai_alerts = []
         is_critical = False
 
@@ -4798,6 +4813,9 @@ async def analyze(file: UploadFile = File(...)):
         else:
             ai_verdict = "📊 ПОВНИЙ АНАЛІЗ ПОЛЬОТУ:"
 
+        _perf["summary_rules_ms"] = round((time.perf_counter() - _perf_summary_start) * 1000.0, 1)
+        _perf_ai_start = time.perf_counter()
+
         # AI_RECONSTRUCTION_BACKEND_V1
         _ai_radio_episodes = []
         for _ep in communication_loss_episodes:
@@ -4878,13 +4896,30 @@ async def analyze(file: UploadFile = File(...)):
             power_metrics=_ai_power_metrics,
         )
         ai_reconstruction = build_ai_reconstruction(ai_reconstruction_facts)
+        _perf["ai_ms"] = round((time.perf_counter() - _perf_ai_start) * 1000.0, 1)
 
+        _perf_graphs_start = time.perf_counter()
         graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
         board_messages = build_board_messages(raw_timeline, base_t)
         plot_token = _register_plot_file(temp.name)
+        _perf["graphs_ms"] = round((time.perf_counter() - _perf_graphs_start) * 1000.0, 1)
+        _perf["server_total_ms"] = round((time.perf_counter() - _perf_total_start) * 1000.0, 1)
+
+        ai_alerts.append(
+            "⏱ <b>Швидкість аналізу backend:</b> "
+            f"файл {_perf['file_size_mb']:.2f} МБ; "
+            f"завантаження {_perf['upload_ms'] / 1000.0:.2f} с; "
+            f"MAVLink/правила {_perf['parse_rules_ms'] / 1000.0:.2f} с; "
+            f"Timeline {_perf['timeline_ms'] / 1000.0:.2f} с; "
+            f"підсумкові правила {_perf['summary_rules_ms'] / 1000.0:.2f} с; "
+            f"AI {_perf['ai_ms'] / 1000.0:.3f} с; "
+            f"графіки {_perf['graphs_ms'] / 1000.0:.2f} с; "
+            f"backend разом {_perf['server_total_ms'] / 1000.0:.2f} с."
+        )
 
         return {
             "success": True,
+            "performance": _perf,
             "plotToken": plot_token,
             "graph_data": graph_data,
             "board_messages": board_messages,
