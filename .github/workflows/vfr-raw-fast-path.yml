@@ -54,4 +54,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/main.py
           git commit -m "perf: use raw VFR_HUD fast path"
-          git push
+          git pull --rebase origin feature/vfr-raw-fast-path-tdd
+          git push origin HEAD:feature/vfr-raw-fast-path-tdd
