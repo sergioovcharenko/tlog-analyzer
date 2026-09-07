@@ -17,16 +17,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply dashboard summary integration
+        run: python tools/apply_dashboard_flight_summary.py
       - name: Run dashboard summary contract
         run: python -m unittest tests/test_dashboard_summary_vtx_engine.py -v
-      - name: Apply dashboard summary integration
-        if: success()
-        run: python tools/apply_dashboard_flight_summary.py
-      - name: Re-run dashboard summary contract
-        if: success()
-        run: python -m unittest tests/test_dashboard_summary_vtx_engine.py -v
       - name: Check inline JavaScript syntax
-        if: success()
         run: |
           python - <<'PY'
           from pathlib import Path
