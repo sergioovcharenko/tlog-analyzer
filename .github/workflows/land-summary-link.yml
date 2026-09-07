@@ -1,0 +1,31 @@
+name: LAND summary link
+
+on:
+  push:
+    branches:
+      - feature/land-summary-link
+    paths:
+      - backend/main.py
+      - tests/test_land_summary_link_contract.py
+      - .github/workflows/land-summary-link.yml
+  pull_request:
+    paths:
+      - backend/main.py
+      - tests/test_land_summary_link_contract.py
+      - .github/workflows/land-summary-link.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: LAND summary contract
+        run: python -m unittest tests.test_land_summary_link_contract -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py
