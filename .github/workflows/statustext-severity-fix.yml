@@ -6,6 +6,9 @@ on:
       - feature/statustext-severity-fix
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,8 +17,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply STATUSTEXT severity fix
+        run: python tools/apply_statustext_severity_fix.py
       - name: Run STATUSTEXT severity regression
         run: python -m unittest tests/test_statustext_severity_passthrough.py -v
+      - name: Run existing board message tests
+        run: python -m unittest tests/test_dynamic_mavlink_plot_backend.py tests/test_board_messages_complete_list.py tests/test_graph_board_statustext_clickable.py -v
       - name: Compile backend
-        if: success()
         run: python -m py_compile backend/main.py backend/mavlink_plot.py
+      - name: Commit generated backend fix
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py
+          git commit -m "fix: preserve STATUSTEXT severity in timeline"
+          git pull --rebase origin feature/statustext-severity-fix
+          git push
