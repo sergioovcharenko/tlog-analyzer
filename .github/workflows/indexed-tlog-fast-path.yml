@@ -1,0 +1,37 @@
+name: Indexed TLOG fast path
+
+on:
+  push:
+    branches:
+      - feature/indexed-tlog-fast-path
+    paths:
+      - backend/indexed_tlog.py
+      - backend/main.py
+      - tests/test_indexed_tlog.py
+      - tests/test_indexed_tlog_integration_contract.py
+      - .github/workflows/indexed-tlog-fast-path.yml
+  pull_request:
+    paths:
+      - backend/indexed_tlog.py
+      - backend/main.py
+      - tests/test_indexed_tlog.py
+      - tests/test_indexed_tlog_integration_contract.py
+      - .github/workflows/indexed-tlog-fast-path.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Run indexed TLOG unit tests
+        run: python -m unittest tests.test_indexed_tlog -v
+      - name: Run indexed TLOG integration contract
+        if: hashFiles('tests/test_indexed_tlog_integration_contract.py') != ''
+        run: python -m unittest tests.test_indexed_tlog_integration_contract -v
+      - name: Compile backend
+        run: python -m py_compile backend/main.py backend/indexed_tlog.py
