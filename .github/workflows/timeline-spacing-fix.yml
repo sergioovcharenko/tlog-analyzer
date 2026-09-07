@@ -1,0 +1,31 @@
+name: Timeline spacing fix
+
+on:
+  push:
+    branches:
+      - fix/timeline-altitude-distance-spacing
+    paths:
+      - index.html
+      - tests/test_timeline_spacing_contract.py
+      - tools/apply_timeline_spacing_fix.py
+      - .github/workflows/timeline-spacing-fix.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_timeline_spacing_contract.py
+      - tools/apply_timeline_spacing_fix.py
+      - .github/workflows/timeline-spacing-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run timeline spacing contract
+        run: python -m unittest tests.test_timeline_spacing_contract -v
