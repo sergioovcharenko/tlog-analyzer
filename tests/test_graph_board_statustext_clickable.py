@@ -25,12 +25,12 @@ class GraphBoardStatustextClickableTest(unittest.TestCase):
     def test_board_messages_are_clickable_and_jump_graph_to_exact_event_time(self):
         self.assertIn('data-board-time="${Number(m.time_ms)}"', INDEX)
         self.assertIn("root.querySelectorAll('[data-board-time]').forEach", INDEX)
-        self.assertIn("setGraphCursorTime(Number(el.dataset.boardTime))", INDEX)
+        self.assertIn("selectGraphTime(Number(el.dataset.boardTime))", INDEX)
 
     def test_board_message_styles_distinguish_problem_levels(self):
         self.assertIn('.board-message-warning', INDEX)
         self.assertIn('.board-message-error', INDEX)
-        self.assertIn('cursor:pointer', INDEX)
+        self.assertIn('.board-message[data-board-time]{cursor:pointer', INDEX)
 
 
 if __name__ == "__main__":
