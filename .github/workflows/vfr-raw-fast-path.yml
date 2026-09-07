@@ -1,0 +1,57 @@
+name: VFR raw fast path
+
+on:
+  push:
+    branches:
+      - feature/vfr-raw-fast-path-tdd
+    paths:
+      - backend/raw_vfr.py
+      - backend/main.py
+      - tests/test_vfr_raw_fast_path.py
+      - tests/test_vfr_raw_integration_contract.py
+      - tools/apply_vfr_raw_fast_path.py
+      - .github/workflows/vfr-raw-fast-path.yml
+  pull_request:
+    paths:
+      - backend/raw_vfr.py
+      - backend/main.py
+      - tests/test_vfr_raw_fast_path.py
+      - tests/test_vfr_raw_integration_contract.py
+      - tools/apply_vfr_raw_fast_path.py
+      - .github/workflows/vfr-raw-fast-path.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Run VFR raw unit tests
+        run: python -m unittest tests.test_vfr_raw_fast_path -v
+      - name: Apply VFR raw integration
+        if: hashFiles('tools/apply_vfr_raw_fast_path.py') != ''
+        run: python tools/apply_vfr_raw_fast_path.py
+      - name: Run VFR raw integration contract
+        if: hashFiles('tests/test_vfr_raw_integration_contract.py') != ''
+        run: python -m unittest tests.test_vfr_raw_integration_contract -v
+      - name: Compile backend
+        if: hashFiles('backend/raw_vfr.py') != ''
+        run: python -m py_compile backend/main.py backend/raw_vfr.py
+      - name: Commit generated integration
+        if: github.event_name == 'push' && hashFiles('tools/apply_vfr_raw_fast_path.py') != ''
+        run: |
+          if git diff --quiet -- backend/main.py; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py
+          git commit -m "perf: use raw VFR_HUD fast path"
+          git push
