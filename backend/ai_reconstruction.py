@@ -47,11 +47,15 @@ def build_ai_reconstruction_facts(
             and abs(float(s["time_s"]) - t) <= AI_REACTION_WINDOW_S
         ]
         alt_values = [float(s["altitude_m"]) for s in window]
-        vtx_changed = any(
-            e.get("time_s") is not None
-            and 0.0 <= float(e["time_s"]) - t <= AI_REACTION_WINDOW_S
-            for e in (vtx_events or [])
-        )
+        structured_vtx_changed = critical.get("vtx_changed")
+        if structured_vtx_changed is None:
+            vtx_changed = any(
+                e.get("time_s") is not None
+                and 0.0 <= float(e["time_s"]) - t <= AI_REACTION_WINDOW_S
+                for e in (vtx_events or [])
+            )
+        else:
+            vtx_changed = bool(structured_vtx_changed)
         critical_episode = {
             "time_s": t,
             "altitude_m": float(alt_sample["altitude_m"]) if alt_sample else None,
