@@ -1,0 +1,60 @@
+name: SD SH activity alerts
+
+on:
+  push:
+    branches:
+      - feature/sd-sh-activity-alerts
+    paths:
+      - index.html
+      - tests/test_sd_sh_activity_alerts.py
+      - tests/test_tx16_ui_contract.py
+      - tools/apply_sd_sh_activity_alerts.py
+      - .github/workflows/sd-sh-activity-alerts.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_sd_sh_activity_alerts.py
+      - tests/test_tx16_ui_contract.py
+      - tools/apply_sd_sh_activity_alerts.py
+      - .github/workflows/sd-sh-activity-alerts.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply SD/SH activity alerts
+        run: python tools/apply_sd_sh_activity_alerts.py
+      - name: Run SD/SH activity contract
+        run: python -m unittest tests.test_sd_sh_activity_alerts tests.test_tx16_ui_contract -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          joined='\n'.join(scripts)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write(joined)
+              path=f.name
+          subprocess.run(['node','--check',path],check=True)
+          PY
+      - name: Commit generated SD/SH integration
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "ui: report SD and SH activity separately"
+          git pull --rebase origin feature/sd-sh-activity-alerts
+          git push
