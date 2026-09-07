@@ -1584,6 +1584,10 @@ async def analyze(file: UploadFile = File(...)):
         # Radio
         min_rssi = 255
         min_dbm = 0
+        # RADIO_DBM_SUMMARY_V1 — average every valid RADIO/RADIO_STATUS dBm sample.
+        # -128 dBm is intentionally INCLUDED in the arithmetic mean.
+        dbm_sum = 0.0
+        dbm_sample_count = 0
         telem_rssi_raw = None
         telem_remrssi_raw = None
         radio_status_seen = False
@@ -2766,6 +2770,10 @@ async def analyze(file: UploadFile = File(...)):
                 dbm_val = parse_dbm(telem_rssi_raw)
                 previous_dbm = curr_dbm
                 curr_dbm = dbm_val
+
+                if dbm_val != 0:
+                    dbm_sum += float(dbm_val)
+                    dbm_sample_count += 1
 
                 if dbm_val != 0 and (min_dbm == 0 or dbm_val < min_dbm):
                     min_dbm = dbm_val
@@ -5222,6 +5230,13 @@ async def analyze(file: UploadFile = File(...)):
                     if min_dbm != 0
                     else "—"
                 ),
+                "avgDbm": (
+                    round(dbm_sum / dbm_sample_count, 1)
+                    if dbm_sample_count > 0
+                    else None
+                ),
+                "worstDbm": (round(min_dbm) if min_dbm != 0 else None),
+                "dbmSampleCount": dbm_sample_count,
                 "maxThrottle": f"{round(max_throttle)}%",
                 "maxDropout": round(max_radio_bad_duration, 2),
                 "communicationLossCount": len(communication_loss_episodes),
