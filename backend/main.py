@@ -2226,6 +2226,7 @@ async def analyze(file: UploadFile = File(...)):
                     is_currently_armed = is_armed
 
                     if new_mode and new_mode != current_mode:
+                        previous_mode = current_mode
                         if current_mode != "Невідомо":
                             add_event(
                                 f"🔄 Режим змінено на {new_mode}",
@@ -2245,7 +2246,7 @@ async def analyze(file: UploadFile = File(...)):
                             active_land_entry = {
                                 "timestamp": current_timestamp,
                                 "altitude": float(curr_alt) if valid_number(curr_alt) else None,
-                                "modeBefore": None,
+                                "modeBefore": previous_mode if previous_mode != "Невідомо" else None,
                             }
                             land_entries.append(active_land_entry)
 
@@ -3836,6 +3837,38 @@ async def analyze(file: UploadFile = File(...)):
                 ai_alerts.append(
                     "🔴 <b>Є невідновлена втрата зв'язку:</b> TLOG завершився без підтвердженого RADIO/RADIO_STATUS > -128 dBm після останньої втрати."
                 )
+
+        # LAND_SUMMARY_LINK_V1 — show every detected transition into LAND in the AI conclusion.
+        # The first transition is clickable through the same Timeline jump mechanism
+        # already used by the other diagnostic alerts.
+        if land_entries:
+            first_land = land_entries[0]
+            first_land_time = format_timeline_time(first_land.get("timestamp"), base_t)
+            first_land_from = first_land.get("modeBefore")
+
+            if len(land_entries) == 1:
+                if first_land_from:
+                    land_transition_text = f"{first_land_from} → LAND о {first_land_time}"
+                else:
+                    land_transition_text = f"LAND о {first_land_time}"
+            else:
+                last_land = land_entries[-1]
+                last_land_time = format_timeline_time(last_land.get("timestamp"), base_t)
+                first_label = (
+                    f"{first_land_from} → LAND о {first_land_time}"
+                    if first_land_from
+                    else f"перший LAND о {first_land_time}"
+                )
+                land_transition_text = (
+                    f"зафіксовано {len(land_entries)} переходи; "
+                    f"{first_label}; останній LAND о {last_land_time}"
+                )
+
+            ai_alerts.append(
+                f'<span class="ai-jump" data-jump-time="{first_land_time}">'
+                f"🛬 <b>Перехід у LAND:</b> {land_transition_text}. "
+                "Натисніть, щоб перейти до цього моменту в Timeline.</span>"
+            )
 
         # Завершення польоту / LAND -> automatic DISARM
         if disarm_detected:

@@ -1,0 +1,50 @@
+name: LAND summary link
+
+on:
+  push:
+    branches:
+      - feature/land-summary-link
+    paths:
+      - backend/main.py
+      - tests/test_land_summary_link_contract.py
+      - tools/apply_land_summary_link.py
+      - .github/workflows/land-summary-link.yml
+  pull_request:
+    paths:
+      - backend/main.py
+      - tests/test_land_summary_link_contract.py
+      - tools/apply_land_summary_link.py
+      - .github/workflows/land-summary-link.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply LAND summary link
+        run: python tools/apply_land_summary_link.py
+      - name: LAND summary contract
+        run: python -m unittest tests.test_land_summary_link_contract -v
+      - name: Backend syntax
+        run: python -m py_compile backend/main.py
+      - name: Commit generated backend
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py; then
+            echo "No generated backend changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py
+          git commit -m "feat: add clickable LAND transition summary"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
