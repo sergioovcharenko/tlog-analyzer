@@ -5,6 +5,7 @@ from typing import Any
 STABLE_ALTITUDE_SPREAD_M = 5.0
 SHORT_RTL_LAND_S = 2.0
 LAND_AWAY_HOME_M = 100.0
+AI_REACTION_WINDOW_S = 10.0
 
 
 def _confidence(label_points: int) -> str:
@@ -13,6 +14,75 @@ def _confidence(label_points: int) -> str:
     if label_points >= 2:
         return "Середня"
     return "Низька"
+
+
+def _nearest_sample(samples: list[dict[str, Any]], time_s: float, value_key: str) -> dict[str, Any] | None:
+    valid = [s for s in samples if s.get("time_s") is not None and s.get(value_key) is not None]
+    if not valid:
+        return None
+    return min(valid, key=lambda s: abs(float(s["time_s"]) - float(time_s)))
+
+
+def build_ai_reconstruction_facts(
+    *,
+    radio_loss_episodes,
+    mode_transitions,
+    altitude_samples,
+    vtx_events,
+    home_distance_samples,
+    ended_armed,
+    power_metrics,
+) -> dict[str, Any]:
+    radio = list(radio_loss_episodes or [])
+    critical = radio[-1] if radio else None
+    critical_episode = None
+
+    if critical is not None:
+        t = float(critical.get("time_s", 0.0))
+        alt_sample = _nearest_sample(list(altitude_samples or []), t, "altitude_m")
+        window = [
+            s for s in (altitude_samples or [])
+            if s.get("time_s") is not None
+            and s.get("altitude_m") is not None
+            and abs(float(s["time_s"]) - t) <= AI_REACTION_WINDOW_S
+        ]
+        alt_values = [float(s["altitude_m"]) for s in window]
+        vtx_changed = any(
+            e.get("time_s") is not None
+            and 0.0 <= float(e["time_s"]) - t <= AI_REACTION_WINDOW_S
+            for e in (vtx_events or [])
+        )
+        critical_episode = {
+            "time_s": t,
+            "altitude_m": float(alt_sample["altitude_m"]) if alt_sample else None,
+            "altitude_window_min_m": min(alt_values) if alt_values else None,
+            "altitude_window_max_m": max(alt_values) if alt_values else None,
+            "vtx_changed": bool(vtx_changed),
+        }
+
+    land_transition = next(
+        (
+            tr for tr in (mode_transitions or [])
+            if tr.get("from") == "RTL" and tr.get("to") == "LAND"
+        ),
+        None,
+    )
+    land_distance_home_m = None
+    if land_transition and land_transition.get("time_s") is not None:
+        nearest_home = _nearest_sample(
+            list(home_distance_samples or []), float(land_transition["time_s"]), "distance_m"
+        )
+        if nearest_home:
+            land_distance_home_m = float(nearest_home["distance_m"])
+
+    return {
+        "radio_loss_episodes": radio,
+        "critical_radio_episode": critical_episode,
+        "mode_transitions": list(mode_transitions or []),
+        "land_distance_home_m": land_distance_home_m,
+        "ended_armed": bool(ended_armed),
+        "power": dict(power_metrics or {}),
+    }
 
 
 def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
