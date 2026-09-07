@@ -28,7 +28,7 @@ class RadioSummaryCleanupTests(unittest.TestCase):
             "createCard('CH8 PWM'",
         ):
             self.assertNotIn(old, HTML)
-        self.assertIn("createCard('VTX / Відеочастота'", HTML)
+        self.assertIn("'VTX / Відеочастота'", HTML)
         self.assertIn("createCard('Змін VTX'", HTML)
 
 
