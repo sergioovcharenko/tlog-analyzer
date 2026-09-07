@@ -2196,17 +2196,14 @@ async def analyze(file: UploadFile = File(...)):
 
         # Fast analyzer path: decode only messages used by the flight analysis.
         # The full dynamic MAVLink catalog is parsed later from the same server-side file.
-        # MAVLINK_RECV_FAST_PATH_V1 — recv one decoded frame at a time and
-        # filter with an O(1) set locally. This preserves pymavlink post_message
-        # side effects while avoiding recv_match's repeated Python list scan.
-        needed_messages = {
+        needed_messages = [
             "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "EFI_STATUS", "ALTITUDE",
             "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "RC_CHANNELS",
             "RADIO", "RADIO_STATUS", "ATTITUDE", "VIBRATION",
             "TEMPERATURE", "HIGHRES_IMU", "SCALED_PRESSURE",
             "SCALED_PRESSURE2", "SCALED_PRESSURE3", "MCU_STATUS",
             "STATUSTEXT", "ESC_TELEMETRY_1_TO_4", "PARAM_VALUE",
-        }
+        ]
 
         # MAVLINK_INNER_PROFILE_V1 — diagnostic-only profiling of decode vs per-type rule work.
         _perf_recv_match_ms = 0.0
@@ -2226,17 +2223,14 @@ async def analyze(file: UploadFile = File(...)):
                 _perf_prev_start = None
 
             _perf_recv_start = time.perf_counter()
-            msg = mav.recv_msg()
+            msg = mav.recv_match(type=needed_messages, blocking=False)
             _perf_recv_match_ms += (time.perf_counter() - _perf_recv_start) * 1000.0
 
             if msg is None:
                 break
 
-            msg_type = msg.get_type()
-            if msg_type not in needed_messages:
-                continue
-
             message_count += 1
+            msg_type = msg.get_type()
             _perf_msg_type_count[msg_type] = _perf_msg_type_count.get(msg_type, 0) + 1
             _perf_prev_type = msg_type
             _perf_prev_start = time.perf_counter()
@@ -4960,7 +4954,7 @@ async def analyze(file: UploadFile = File(...)):
         ]
         ai_alerts.append(
             "🔬 <b>MAVLink профіль:</b> "
-            f"recv_msg/decode {_perf['recv_match_ms'] / 1000.0:.2f} с; "
+            f"recv_match/decode {_perf['recv_match_ms'] / 1000.0:.2f} с; "
             f"обробка правил по повідомленнях {_perf['message_processing_ms'] / 1000.0:.2f} с; "
             f"інше всередині parse {_perf['unattributed_parse_ms'] / 1000.0:.2f} с. "
             + ("Найдорожчі типи: " + "; ".join(_perf_profile_parts) + "." if _perf_profile_parts else "")
