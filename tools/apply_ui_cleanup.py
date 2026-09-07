@@ -3,6 +3,8 @@ from pathlib import Path
 
 INDEX = Path("index.html")
 MARKER = "UI_CLEANUP_V1"
+OLD_ALTITUDE_CSS = ".tl-altitude-cell{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;white-space:nowrap;min-width:0}"
+NEW_ALTITUDE_CSS = ".tl-altitude-cell{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:2px!important;white-space:nowrap!important;min-width:0}"
 
 STYLE = r'''
 <style>
@@ -52,7 +54,7 @@ STYLE = r'''
 .ai-list li.ai-alert-hidden-debug{display:none!important}
 
 /* Stack descent speed directly below altitude instead of consuming horizontal space. */
-.tl-altitude-cell{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;white-space:nowrap;min-width:0}
+.tl-altitude-cell{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:2px!important;white-space:nowrap!important;min-width:0}
 .land-vspeed-inline{display:block!important;margin:0!important;font-size:10px!important;line-height:1.05!important;color:#7dd3fc!important;font-weight:800!important;white-space:nowrap}
 </style>
 '''
@@ -112,7 +114,12 @@ SCRIPT = r'''
 def main():
     text = INDEX.read_text(encoding="utf-8")
     if MARKER in text:
-        print("UI cleanup already applied")
+        if OLD_ALTITUDE_CSS in text:
+            text = text.replace(OLD_ALTITUDE_CSS, NEW_ALTITUDE_CSS, 1)
+            INDEX.write_text(text, encoding="utf-8")
+            print("Updated UI cleanup LAND stack")
+        else:
+            print("UI cleanup already applied")
         return
     if "</head>" not in text or "</body>" not in text:
         raise SystemExit("index.html is missing </head> or </body>")
