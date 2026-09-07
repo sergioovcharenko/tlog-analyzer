@@ -11,6 +11,9 @@ class DashboardSummaryVtxEngineTest(unittest.TestCase):
         self.assertIn("СЕРЕДНЄ ЗА ПОЛІТ", INDEX)
         self.assertIn("Engine Load", INDEX)
 
+    def test_engine_load_average_ignores_missing_samples(self):
+        self.assertIn("row.engineLoad!==null&&row.engineLoad!==undefined", INDEX)
+
     def test_radio_card_prioritizes_average_and_keeps_worst_value(self):
         self.assertIn("СЕРЕДНЄ", INDEX)
         self.assertIn("Найгірше:", INDEX)
