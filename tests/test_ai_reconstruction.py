@@ -75,6 +75,24 @@ class AIReconstructionTest(unittest.TestCase):
         result = build_ai_reconstruction(facts)
         self.assertEqual(result["dominant_scenario"], "power")
 
+    def test_short_rtl_land_is_reported_even_without_radio_scenario(self):
+        facts = {
+            "radio_loss_episodes": [],
+            "critical_radio_episode": None,
+            "mode_transitions": [
+                {"from": "RTL", "to": "LAND", "time_s": 201.1, "delta_s": 0.6}
+            ],
+            "land_distance_home_m": 900.0,
+            "ended_armed": False,
+            "power": {},
+        }
+        result = build_ai_reconstruction(facts)
+        joined = " ".join(result["likely_sequence"])
+        self.assertIn("RTL", joined)
+        self.assertIn("LAND", joined)
+        self.assertIn("0.6", joined)
+        self.assertIn("900", joined)
+
     def test_normal_log_does_not_invent_a_failure(self):
         facts = {
             "radio_loss_episodes": [],
