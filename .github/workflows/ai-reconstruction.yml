@@ -10,7 +10,7 @@ on:
       - index.html
       - tests/test_ai_reconstruction.py
       - tests/test_ai_reconstruction_integration.py
-      - tests/test_ai_reconstruction_ui.py
+      - tests/test_ai_reconstruction_frontend_contract.py
       - tools/apply_ai_reconstruction.py
       - .github/workflows/ai-reconstruction.yml
   pull_request:
@@ -20,31 +20,55 @@ on:
       - index.html
       - tests/test_ai_reconstruction.py
       - tests/test_ai_reconstruction_integration.py
-      - tests/test_ai_reconstruction_ui.py
+      - tests/test_ai_reconstruction_frontend_contract.py
       - tools/apply_ai_reconstruction.py
       - .github/workflows/ai-reconstruction.yml
+
+permissions:
+  contents: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install backend deps
         run: pip install -r backend/requirements.txt
+      - name: Apply AI reconstruction integration
+        run: python tools/apply_ai_reconstruction.py
       - name: Run AI reconstruction unit tests
         run: python -m unittest tests.test_ai_reconstruction -v
-      - name: Run AI reconstruction integration tests if present
-        run: |
-          if [ -f tests/test_ai_reconstruction_integration.py ]; then
-            python -m unittest tests.test_ai_reconstruction_integration -v
-          fi
-      - name: Run AI reconstruction UI tests if present
-        run: |
-          if [ -f tests/test_ai_reconstruction_ui.py ]; then
-            python -m unittest tests.test_ai_reconstruction_ui -v
-          fi
+      - name: Run AI reconstruction integration tests
+        run: python -m unittest tests.test_ai_reconstruction_integration -v
+      - name: Run AI reconstruction frontend contract
+        run: python -m unittest tests.test_ai_reconstruction_frontend_contract -v
       - name: Compile backend
         run: python -m py_compile backend/main.py backend/ai_reconstruction.py
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,flags=re.S|re.I)
+          Path('/tmp/tlog-inline.js').write_text('\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/tlog-inline.js
+      - name: Commit generated integration
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo "No generated integration changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "feat: integrate AI reconstruction summary"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
