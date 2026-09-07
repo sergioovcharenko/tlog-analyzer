@@ -1,0 +1,1 @@
+Verification target for PR: radio summary cleanup contract, backend compile, and inline JavaScript syntax must pass. Full analyzer regression is checked by the existing AI reconstruction workflow on the pull request.

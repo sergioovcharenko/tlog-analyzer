@@ -2856,8 +2856,16 @@ function renderResults(data){
     .sort((a,b)=>b-a)[0];
 
   document.getElementById('healthGrid').innerHTML=`
-    ${createCard('RC RSSI',data.radio?.rssi||'—')}
-    ${createCard('RADIO STATUS',data.radio?.telemRssi||'—')}
+    ${createCard('MIN RSSI',data.radio?.rssi||'—','Найнижчий RC RSSI за весь TLOG')}
+    ${createCard(
+      'RADIO dBm',
+      typeof data.radio?.worstDbm==='number'
+        ?`MAX ${data.radio.worstDbm} dBm`
+        :'—',
+      typeof data.radio?.avgDbm==='number'
+        ?`Середнє: ${data.radio.avgDbm.toFixed(1)} dBm (включно з -128)`
+        :'Середнє значення недоступне'
+    )}
     ${createCard('Макс. RF просідання',(data.radio?.maxDropout??'—')+' с')}
     ${createCard('Температура FC',data.health?.maxTemp||'—')}
     ${createCard(
@@ -2880,11 +2888,7 @@ function renderResults(data){
         :'—',
       'Розрахунок за CH7 + CH8'
     )}
-    ${createCard('Діапазон CH7',video.band?video.band+' GHz':'—')}
-    ${createCard('Канал CH8',video.channel||'—')}
     ${createCard('Змін VTX',video.changeCount??0)}
-    ${createCard('CH7 PWM',video.ch7Pwm?video.ch7Pwm+' us':'—')}
-    ${createCard('CH8 PWM',video.ch8Pwm?video.ch8Pwm+' us':'—')}
   `;
 
   // V23.9: summary cards now show BOTH the PWM range and the last/current
