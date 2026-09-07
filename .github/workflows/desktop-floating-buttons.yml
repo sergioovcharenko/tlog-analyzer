@@ -1,0 +1,26 @@
+name: Desktop floating buttons
+
+on:
+  push:
+    branches:
+      - fix/desktop-floating-buttons
+    paths:
+      - index.html
+      - tests/test_desktop_floating_buttons.py
+      - .github/workflows/desktop-floating-buttons.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_desktop_floating_buttons.py
+      - .github/workflows/desktop-floating-buttons.yml
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Desktop floating button contract
+        run: python -m unittest tests.test_desktop_floating_buttons -v
