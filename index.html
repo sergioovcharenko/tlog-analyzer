@@ -1201,6 +1201,18 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 </style>
 
+
+<style>
+/* AI_RECONSTRUCTION_STYLE_V1 */
+.ai-reconstruction{background:var(--bg-card);border:1px solid var(--border-color);border-left:4px solid #38bdf8;border-radius:8px;padding:20px 22px;margin:-14px 0 30px}
+.ai-reconstruction[hidden]{display:none!important}
+.ai-reconstruction h3{margin:0 0 12px;color:#7dd3fc;font-size:18px}
+.ai-reconstruction h4{margin:12px 0 5px;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.35px}
+.ai-reconstruction ul{margin:0;padding-left:20px;line-height:1.5}
+.ai-reconstruction li{margin:3px 0}
+#aiReconConfidence{margin-top:13px;padding-top:10px;border-top:1px solid var(--border-color);font-weight:800;color:#cbd5e1}
+</style>
+
 </head>
 <body>
 <!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
@@ -1253,6 +1265,16 @@ html,body{max-width:100%;overflow-x:hidden}
       <h3 id="aiTitle" class="ai-title"></h3>
       <ul id="aiAlerts" class="ai-list"></ul>
     </div>
+
+    <!-- AI_RECONSTRUCTION_V1 -->
+    <section id="aiReconstructionBlock" class="ai-reconstruction" hidden>
+      <h3>🤖 AI ВИСНОВОК</h3>
+      <div id="aiReconWhat"></div>
+      <div id="aiReconSequence"></div>
+      <div id="aiReconActions"></div>
+      <div id="aiReconAlternatives"></div>
+      <div id="aiReconConfidence"></div>
+    </section>
 
     <div class="section-title">🚁 ДИНАМІКА ПОЛЬОТУ</div>
     <div class="grid" id="flightGrid"></div>
@@ -2395,6 +2417,30 @@ function ensureGraphCanvasEvents(){
 
 window.addEventListener('resize',()=>{const o=document.getElementById('graphViewerOverlay');if(o&&!o.hidden){const m=graphMetricByKey(graphViewerState.metricKey);if(m)renderGraphSeries(m);}});
 
+function renderAiReconstruction(recon){
+  const block=document.getElementById('aiReconstructionBlock');
+  if(!block||!recon){if(block)block.hidden=true;return;}
+  const sections=[
+    ['aiReconWhat','Що сталося',recon.what_happened],
+    ['aiReconSequence','Ймовірна послідовність',recon.likely_sequence],
+    ['aiReconActions','Дії, зафіксовані в TLOG',recon.pilot_actions],
+    ['aiReconAlternatives','Що могло допомогти',recon.possible_alternatives],
+  ];
+  sections.forEach(([id,title,items])=>{
+    const host=document.getElementById(id);if(!host)return;
+    host.replaceChildren();
+    if(!Array.isArray(items)||!items.length)return;
+    const h=document.createElement('h4');h.textContent=title;
+    const ul=document.createElement('ul');
+    items.forEach(text=>{const li=document.createElement('li');li.textContent=String(text);ul.appendChild(li);});
+    host.append(h,ul);
+  });
+  const confidence=document.getElementById('aiReconConfidence');
+  if(confidence)confidence.textContent=`Впевненість аналізу: ${recon.confidence||'Низька'}`;
+  block.dataset.scenario=String(recon.dominant_scenario||'none');
+  block.hidden=false;
+}
+
 function renderResults(data){
   UI.progress.style.display='none';
   UI.results.style.display='block';
@@ -2442,6 +2488,7 @@ function renderResults(data){
   }
 
   aiTitle.textContent=data.ai?.verdict||'Результати';
+  renderAiReconstruction(data.ai_reconstruction);
 
   // TX16S: підтверджена схема цього борта.
   // SA=CH7, SB=CH8 — VTX; SC=CH15 + SF=CH10 — система скиду;
