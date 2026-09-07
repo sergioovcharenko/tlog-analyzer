@@ -1,0 +1,48 @@
+name: Desktop floating buttons
+
+on:
+  push:
+    branches:
+      - fix/desktop-floating-buttons
+    paths:
+      - index.html
+      - tests/test_desktop_floating_buttons.py
+      - tools/apply_desktop_floating_buttons.py
+      - .github/workflows/desktop-floating-buttons.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_desktop_floating_buttons.py
+      - tools/apply_desktop_floating_buttons.py
+      - .github/workflows/desktop-floating-buttons.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply desktop floating button fix
+        run: python tools/apply_desktop_floating_buttons.py
+      - name: Desktop floating button contract
+        run: python -m unittest tests.test_desktop_floating_buttons -v
+      - name: Commit generated frontend
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated frontend changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "fix: separate desktop floating buttons"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
