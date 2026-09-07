@@ -126,9 +126,12 @@ def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
     points = 0
 
     if dominant == "radio":
-        out["what_happened"].append(
-            f"Зафіксовано повторні епізоди нестабільної радіолінії ({len(radio)})."
-        )
+        if len(radio) == 1:
+            out["what_happened"].append("Зафіксовано критичний епізод нестабільної радіолінії.")
+        else:
+            out["what_happened"].append(
+                f"Зафіксовано повторні епізоди нестабільної радіолінії ({len(radio)})."
+            )
         points += 1
         if radio and radio[-1].get("recovered") is False:
             out["what_happened"].append(
@@ -162,27 +165,6 @@ def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
                 )
                 points += 1
 
-        for tr in transitions:
-            delta = tr.get("delta_s")
-            if (
-                tr.get("from") == "RTL"
-                and tr.get("to") == "LAND"
-                and delta is not None
-                and float(delta) <= SHORT_RTL_LAND_S
-            ):
-                out["likely_sequence"].append(
-                    f"RTL змінився на LAND приблизно через {float(delta):.1f} с, тому RTL мав дуже мало часу для продовження повернення."
-                )
-                points += 1
-                break
-
-        dist = facts.get("land_distance_home_m")
-        if dist is not None and float(dist) >= LAND_AWAY_HOME_M:
-            out["likely_sequence"].append(
-                f"LAND розпочався приблизно за {float(dist):.0f} м від HOME."
-            )
-            points += 1
-
     elif dominant == "power":
         out["what_happened"].append(
             "Сукупність телеметрії більше відповідає проблемі силової установки або живлення, ніж радіолінії."
@@ -212,6 +194,28 @@ def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
         out["what_happened"].append(
             "За даними TLOG не виявлено одного домінуючого механізму відмови, підтвердженого кількома незалежними ознаками."
         )
+
+    # Mode sequence is factual and useful regardless of the dominant scenario.
+    for tr in transitions:
+        delta = tr.get("delta_s")
+        if (
+            tr.get("from") == "RTL"
+            and tr.get("to") == "LAND"
+            and delta is not None
+            and float(delta) <= SHORT_RTL_LAND_S
+        ):
+            out["likely_sequence"].append(
+                f"RTL змінився на LAND приблизно через {float(delta):.1f} с, тому RTL мав дуже мало часу для продовження повернення."
+            )
+            points += 1
+            break
+
+    dist = facts.get("land_distance_home_m")
+    if dist is not None and float(dist) >= LAND_AWAY_HOME_M:
+        out["likely_sequence"].append(
+            f"LAND розпочався приблизно за {float(dist):.0f} м від HOME."
+        )
+        points += 1
 
     if facts.get("ended_armed"):
         out["what_happened"].append(
