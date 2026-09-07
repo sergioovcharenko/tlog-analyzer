@@ -1161,6 +1161,24 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 </style>
 
+
+<style>
+/* LAND_VSPEED_ALTITUDE_CELL_V1 */
+.tl-altitude-cell{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:6px!important;
+  white-space:nowrap!important;
+}
+.land-vspeed-inline{
+  color:#93c5fd!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  white-space:nowrap!important;
+}
+</style>
+
 </head>
 <body>
 <!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
@@ -3259,6 +3277,10 @@ function renderTimelineTable(items,containerId){
       ?formatCurrentColored(item.curr)
       :'—';
 
+    const landVerticalSpeed=typeof item.verticalSpeedDown==='number'&&item.mode==='LAND'
+      ?`<span class="land-vspeed-inline">↓ ${Math.abs(item.verticalSpeedDown).toFixed(2)} м/с</span>`
+      :'';
+
     // V23.6: Engine Load береться з backend поля engineLoad,
     // яке відповідає MAVLink VFR_HUD.throttle (0..100 %).
     const engineLoad=renderEngineLoad(item.engineLoad);
@@ -3355,7 +3377,7 @@ function renderTimelineTable(items,containerId){
       <div class="tl-item ${rowClass}" id="timeline-row-${index}" data-time="${item.time||''}">
         <div class="tl-time">${item.time||'—'}</div>
         <div class="tl-mode">${item.mode||'—'}</div>
-        <div class="tl-badge">${item.alt||'—'}</div>
+        <div class="tl-badge tl-altitude-cell">${item.alt||'—'}${landVerticalSpeed}</div>
         <div class="tl-badge">${item.dist||'—'}</div>
         <div class="tl-badge">${azimuth}</div>
         <div class="tl-badge">${freq}</div>
@@ -3373,7 +3395,6 @@ function renderTimelineTable(items,containerId){
         <div class="tl-system" style="${systemStyle}">
           ${item.flightNumber?`<span class="flight-tag">Політ №${item.flightNumber}${item.takeoffEpisodeNumber?` / еп. ${item.takeoffEpisodeNumber}`:''}</span>`:''}
           ${item.systemText||'—'}
-          ${typeof item.verticalSpeedDown==='number'&&item.mode==='LAND'?`<div class="esc-no-data">Vz↓: ${item.verticalSpeedDown.toFixed(2)} м/с</div>`:''}
         </div>
         <div class="tl-analysis">${item.analysisText?`<span class="analysis-msg">${item.analysisText}</span>`:''}</div>
         <div>${tx16Summary}</div>

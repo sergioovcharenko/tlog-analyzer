@@ -1,0 +1,62 @@
+name: LAND vertical speed altitude cell
+
+on:
+  push:
+    branches:
+      - fix/land-vspeed-altitude-cell
+    paths:
+      - index.html
+      - tests/test_land_vspeed_altitude_cell.py
+      - tools/apply_land_vspeed_altitude_cell.py
+      - .github/workflows/land-vspeed-altitude-cell.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_land_vspeed_altitude_cell.py
+      - tools/apply_land_vspeed_altitude_cell.py
+      - .github/workflows/land-vspeed-altitude-cell.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply LAND speed placement fix
+        run: python tools/apply_land_vspeed_altitude_cell.py
+      - name: LAND vertical speed contract
+        run: python -m unittest tests.test_land_vspeed_altitude_cell -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          text=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',text,re.S|re.I)
+          for i,script in enumerate(scripts):
+              if not script.strip():
+                  continue
+              p=Path(f'/tmp/land-vspeed-{i}.js')
+              p.write_text(script,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
+      - name: Commit generated frontend
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated frontend changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "fix: move LAND descent speed beside altitude"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
