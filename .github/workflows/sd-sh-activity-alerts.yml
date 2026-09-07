@@ -1,0 +1,21 @@
+name: SD SH activity alerts
+
+on:
+  push:
+    branches:
+      - feature/sd-sh-activity-alerts
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run SD/SH activity contract
+        run: python -m unittest tests/test_sd_sh_activity_alerts.py
