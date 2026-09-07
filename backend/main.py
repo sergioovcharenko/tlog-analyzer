@@ -2205,14 +2205,35 @@ async def analyze(file: UploadFile = File(...)):
             "STATUSTEXT", "ESC_TELEMETRY_1_TO_4", "PARAM_VALUE",
         ]
 
+        # MAVLINK_INNER_PROFILE_V1 — diagnostic-only profiling of decode vs per-type rule work.
+        _perf_recv_match_ms = 0.0
+        _perf_msg_type_ms = {}
+        _perf_msg_type_count = {}
+        _perf_prev_type = None
+        _perf_prev_start = None
+
         while True:
+            _perf_loop_now = time.perf_counter()
+            if _perf_prev_type is not None and _perf_prev_start is not None:
+                _perf_msg_type_ms[_perf_prev_type] = (
+                    _perf_msg_type_ms.get(_perf_prev_type, 0.0)
+                    + (_perf_loop_now - _perf_prev_start) * 1000.0
+                )
+                _perf_prev_type = None
+                _perf_prev_start = None
+
+            _perf_recv_start = time.perf_counter()
             msg = mav.recv_match(type=needed_messages, blocking=False)
+            _perf_recv_match_ms += (time.perf_counter() - _perf_recv_start) * 1000.0
 
             if msg is None:
                 break
 
             message_count += 1
             msg_type = msg.get_type()
+            _perf_msg_type_count[msg_type] = _perf_msg_type_count.get(msg_type, 0) + 1
+            _perf_prev_type = msg_type
+            _perf_prev_start = time.perf_counter()
             t_stamp = getattr(msg, "_timestamp", 0.0)
 
             if t_stamp > 0:
@@ -3707,6 +3728,28 @@ async def analyze(file: UploadFile = File(...)):
             raw_timeline.sort(key=lambda row: row.get("timestamp", 0.0))
 
         _perf["parse_rules_ms"] = round((time.perf_counter() - _perf_parse_start) * 1000.0, 1)
+        _perf["recv_match_ms"] = round(_perf_recv_match_ms, 1)
+        _perf["message_processing_ms"] = round(sum(_perf_msg_type_ms.values()), 1)
+        _perf["unattributed_parse_ms"] = round(max(
+            0.0,
+            _perf["parse_rules_ms"] - _perf["recv_match_ms"] - _perf["message_processing_ms"],
+        ), 1)
+        _perf["mavlink_profile"] = [
+            {
+                "type": msg_name,
+                "count": int(_perf_msg_type_count.get(msg_name, 0)),
+                "work_ms": round(work_ms, 1),
+                "avg_us": round(
+                    (work_ms * 1000.0) / max(1, int(_perf_msg_type_count.get(msg_name, 0))),
+                    1,
+                ),
+            }
+            for msg_name, work_ms in sorted(
+                _perf_msg_type_ms.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:12]
+        ]
         _perf_timeline_start = time.perf_counter()
 
         # Estimate antenna pointing from NED position azimuth + dBm.
@@ -4904,6 +4947,18 @@ async def analyze(file: UploadFile = File(...)):
         plot_token = _register_plot_file(temp.name)
         _perf["graphs_ms"] = round((time.perf_counter() - _perf_graphs_start) * 1000.0, 1)
         _perf["server_total_ms"] = round((time.perf_counter() - _perf_total_start) * 1000.0, 1)
+
+        _perf_profile_parts = [
+            f"{item['type']} {item['work_ms'] / 1000.0:.2f} с ({item['count']})"
+            for item in _perf.get("mavlink_profile", [])[:6]
+        ]
+        ai_alerts.append(
+            "🔬 <b>MAVLink профіль:</b> "
+            f"recv_match/decode {_perf['recv_match_ms'] / 1000.0:.2f} с; "
+            f"обробка правил по повідомленнях {_perf['message_processing_ms'] / 1000.0:.2f} с; "
+            f"інше всередині parse {_perf['unattributed_parse_ms'] / 1000.0:.2f} с. "
+            + ("Найдорожчі типи: " + "; ".join(_perf_profile_parts) + "." if _perf_profile_parts else "")
+        )
 
         ai_alerts.append(
             "⏱ <b>Швидкість аналізу backend:</b> "
