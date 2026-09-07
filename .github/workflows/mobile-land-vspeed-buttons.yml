@@ -1,0 +1,62 @@
+name: Mobile LAND speed and floating buttons
+
+on:
+  push:
+    branches:
+      - fix/mobile-land-vspeed-buttons
+    paths:
+      - index.html
+      - tests/test_mobile_land_vspeed_buttons.py
+      - tools/apply_mobile_land_vspeed_buttons.py
+      - .github/workflows/mobile-land-vspeed-buttons.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_mobile_land_vspeed_buttons.py
+      - tools/apply_mobile_land_vspeed_buttons.py
+      - .github/workflows/mobile-land-vspeed-buttons.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply mobile layout fix
+        run: python tools/apply_mobile_land_vspeed_buttons.py
+      - name: Mobile layout contract
+        run: python -m unittest tests.test_mobile_land_vspeed_buttons -v
+      - name: Inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          text=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',text,re.S|re.I)
+          for i,script in enumerate(scripts):
+              if not script.strip():
+                  continue
+              p=Path(f'/tmp/mobile-layout-{i}.js')
+              p.write_text(script,encoding='utf-8')
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
+      - name: Commit generated frontend
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated frontend changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "fix: improve mobile LAND speed and floating buttons"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
