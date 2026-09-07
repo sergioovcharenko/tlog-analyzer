@@ -38,6 +38,12 @@ try:
 except ImportError:
     from mavlink_plot import MavlinkPlotCollector, build_board_messages
 
+# AI_RECONSTRUCTION_IMPORT_V1
+try:
+    from backend.ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts
+except ImportError:
+    from ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts
+
 app = FastAPI()
 
 # GitHub Pages frontend is served from another origin.
@@ -4792,6 +4798,86 @@ async def analyze(file: UploadFile = File(...)):
         else:
             ai_verdict = "📊 ПОВНИЙ АНАЛІЗ ПОЛЬОТУ:"
 
+        # AI_RECONSTRUCTION_BACKEND_V1
+        _ai_radio_episodes = []
+        for _ep in communication_loss_episodes:
+            _start = _ep.get("startTimestamp")
+            if not valid_number(_start):
+                continue
+            _ai_radio_episodes.append({
+                "time_s": float(_start) - float(base_t),
+                "dbm": _ep.get("startDbm", -128),
+                "recovered": bool(_ep.get("recovered")),
+            })
+
+        _ai_mode_transitions = []
+        _ai_altitude_samples = []
+        _ai_vtx_events = []
+        _ai_home_distance_samples = []
+        _ai_prev_mode = None
+        _ai_prev_mode_start = None
+        _ai_prev_vtx = None
+
+        for _row in timeline:
+            if not isinstance(_row, dict) or _row.get("eventType") != "SNAPSHOT":
+                continue
+            _t_ms = _timeline_graph_time_ms(_row.get("time"))
+            if _t_ms is None:
+                continue
+            _t_s = float(_t_ms) / 1000.0
+
+            _mode = str(_row.get("mode") or "").strip()
+            if _mode and _mode != _ai_prev_mode:
+                if _ai_prev_mode is not None and _ai_prev_mode_start is not None:
+                    _ai_mode_transitions.append({
+                        "from": _ai_prev_mode,
+                        "to": _mode,
+                        "time_s": _t_s,
+                        "delta_s": max(0.0, _t_s - _ai_prev_mode_start),
+                    })
+                _ai_prev_mode = _mode
+                _ai_prev_mode_start = _t_s
+
+            _alt = _graph_numeric(_row.get("alt"))
+            if valid_number(_alt):
+                _ai_altitude_samples.append({"time_s": _t_s, "altitude_m": float(_alt)})
+
+            _freq = _graph_numeric(_row.get("videoFreq"))
+            if valid_number(_freq):
+                _freq = int(round(float(_freq)))
+                if _ai_prev_vtx is not None and _freq != _ai_prev_vtx:
+                    _ai_vtx_events.append({"time_s": _t_s, "frequency": _freq})
+                _ai_prev_vtx = _freq
+
+            _dist_raw = _row.get("dist")
+            _dist = _graph_numeric(_dist_raw)
+            if valid_number(_dist):
+                _dist = float(_dist)
+                _dist_text = str(_dist_raw or "").lower()
+                if "km" in _dist_text or "км" in _dist_text:
+                    _dist *= 1000.0
+                _ai_home_distance_samples.append({"time_s": _t_s, "distance_m": _dist})
+
+        _ai_power_metrics = {
+            "potential_thrust_loss_count": len(potential_thrust_loss_events),
+            "rpm_asymmetry_pct": max(
+                [float(e.get("differencePct")) for e in rpm_drop_events if valid_number(e.get("differencePct"))] or [0.0]
+            ),
+            "min_voltage_v": float(min_voltage) if valid_number(min_voltage) and float(min_voltage) > 0 else None,
+            "max_current_a": float(max_current) if valid_number(max_current) else None,
+        }
+
+        ai_reconstruction_facts = build_ai_reconstruction_facts(
+            radio_loss_episodes=_ai_radio_episodes,
+            mode_transitions=_ai_mode_transitions,
+            altitude_samples=_ai_altitude_samples,
+            vtx_events=_ai_vtx_events,
+            home_distance_samples=_ai_home_distance_samples,
+            ended_armed=log_ended_armed,
+            power_metrics=_ai_power_metrics,
+        )
+        ai_reconstruction = build_ai_reconstruction(ai_reconstruction_facts)
+
         graph_data = _build_graph_data(timeline, attitude_graph_samples, base_t)
         board_messages = build_board_messages(raw_timeline, base_t)
         plot_token = _register_plot_file(temp.name)
@@ -4801,6 +4887,7 @@ async def analyze(file: UploadFile = File(...)):
             "plotToken": plot_token,
             "graph_data": graph_data,
             "board_messages": board_messages,
+            "ai_reconstruction": ai_reconstruction,
             "ai": {
                 "verdict": ai_verdict,
                 "isCritical": is_critical,
