@@ -1,0 +1,28 @@
+name: MAVLink speed optimization
+
+on:
+  push:
+    branches:
+      - feature/mavlink-speed-optimization
+    paths:
+      - backend/main.py
+      - tests/test_mavlink_recv_fast_path_contract.py
+      - .github/workflows/mavlink-speed-optimization.yml
+  pull_request:
+    paths:
+      - backend/main.py
+      - tests/test_mavlink_recv_fast_path_contract.py
+      - .github/workflows/mavlink-speed-optimization.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run MAVLink recv fast-path contract
+        run: python -m unittest tests.test_mavlink_recv_fast_path_contract -v
+      - name: Compile backend
+        run: python -m py_compile backend/main.py
