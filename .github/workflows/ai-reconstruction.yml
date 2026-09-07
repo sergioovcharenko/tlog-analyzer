@@ -1,0 +1,50 @@
+name: AI reconstruction
+
+on:
+  push:
+    branches:
+      - feature/ai-reconstruction-summary
+    paths:
+      - backend/ai_reconstruction.py
+      - backend/main.py
+      - index.html
+      - tests/test_ai_reconstruction.py
+      - tests/test_ai_reconstruction_integration.py
+      - tests/test_ai_reconstruction_ui.py
+      - tools/apply_ai_reconstruction.py
+      - .github/workflows/ai-reconstruction.yml
+  pull_request:
+    paths:
+      - backend/ai_reconstruction.py
+      - backend/main.py
+      - index.html
+      - tests/test_ai_reconstruction.py
+      - tests/test_ai_reconstruction_integration.py
+      - tests/test_ai_reconstruction_ui.py
+      - tools/apply_ai_reconstruction.py
+      - .github/workflows/ai-reconstruction.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+      - name: Run AI reconstruction unit tests
+        run: python -m unittest tests.test_ai_reconstruction -v
+      - name: Run AI reconstruction integration tests if present
+        run: |
+          if [ -f tests/test_ai_reconstruction_integration.py ]; then
+            python -m unittest tests.test_ai_reconstruction_integration -v
+          fi
+      - name: Run AI reconstruction UI tests if present
+        run: |
+          if [ -f tests/test_ai_reconstruction_ui.py ]; then
+            python -m unittest tests.test_ai_reconstruction_ui -v
+          fi
+      - name: Compile backend
+        run: python -m py_compile backend/main.py backend/ai_reconstruction.py
