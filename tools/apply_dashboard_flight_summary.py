@@ -15,7 +15,7 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 html = INDEX.read_text(encoding="utf-8")
 
 helper_anchor = "function renderResults(data){"
-helpers = r'''function summarizeEngineLoad(timeline){
+old_helpers = r'''function summarizeEngineLoad(timeline){
   const values=(Array.isArray(timeline)?timeline:[])
     .filter(row=>row&&row.eventType==='SNAPSHOT'&&String(row.mode||'').toUpperCase()!=='DISARMED')
     .map(row=>Number(row.engineLoad))
@@ -53,7 +53,47 @@ function summarizeVtxFrequencySelections(timeline){
 }
 
 '''
-if helpers not in html:
+helpers = r'''function summarizeEngineLoad(timeline){
+  const values=(Array.isArray(timeline)?timeline:[])
+    .filter(row=>row&&row.eventType==='SNAPSHOT'&&String(row.mode||'').toUpperCase()!=='DISARMED'&&row.engineLoad!==null&&row.engineLoad!==undefined)
+    .map(row=>Number(row.engineLoad))
+    .filter(Number.isFinite)
+    .map(v=>Math.max(0,Math.min(100,v)));
+  if(!values.length)return null;
+  const sum=values.reduce((a,b)=>a+b,0);
+  return {
+    avg:sum/values.length,
+    min:Math.min(...values),
+    max:Math.max(...values),
+    samples:values.length
+  };
+}
+
+function summarizeVtxFrequencySelections(timeline){
+  const stats=new Map();
+  let previous=null;
+  let totalSwitches=0;
+  for(const row of (Array.isArray(timeline)?timeline:[])){
+    const freq=Number(row?.videoFreq);
+    if(!Number.isFinite(freq)||freq<=0)continue;
+    const f=Math.round(freq);
+    if(!stats.has(f))stats.set(f,{frequency:f,switches:0});
+    if(previous!==null&&f!==previous){
+      stats.get(f).switches+=1;
+      totalSwitches+=1;
+    }
+    previous=f;
+  }
+  return {
+    totalSwitches,
+    frequencies:[...stats.values()].sort((a,b)=>a.frequency-b.frequency)
+  };
+}
+
+'''
+if old_helpers in html:
+    html = html.replace(old_helpers, helpers, 1)
+elif helpers not in html:
     if helper_anchor not in html:
         raise SystemExit("anchor not found: renderResults")
     html = html.replace(helper_anchor, helpers + helper_anchor, 1)
