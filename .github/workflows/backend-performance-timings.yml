@@ -1,0 +1,33 @@
+name: Backend performance timings
+
+on:
+  push:
+    branches:
+      - feature/backend-performance-timings
+    paths:
+      - backend/main.py
+      - tests/test_backend_performance_timings_contract.py
+      - tools/apply_backend_performance_timings.py
+      - .github/workflows/backend-performance-timings.yml
+  pull_request:
+    paths:
+      - backend/main.py
+      - tests/test_backend_performance_timings_contract.py
+      - tools/apply_backend_performance_timings.py
+      - .github/workflows/backend-performance-timings.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run performance timing contract
+        run: python -m unittest tests.test_backend_performance_timings_contract -v
+      - name: Compile backend
+        run: python -m py_compile backend/main.py
