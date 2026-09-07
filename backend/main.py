@@ -1891,6 +1891,7 @@ async def analyze(file: UploadFile = File(...)):
             is_error=False,
             is_pilot_action=False,
             event_type="SYSTEM",
+            severity=None,
         ):
             raw_timeline.append(
                 {
@@ -1952,6 +1953,7 @@ async def analyze(file: UploadFile = File(...)):
                     "pilot_text": text if is_pilot_action else "",
                     "eventType": event_type,
                     "isError": is_error,
+                    "severity": severity,
                 }
             )
 
