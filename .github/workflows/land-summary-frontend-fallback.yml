@@ -1,0 +1,33 @@
+name: LAND summary frontend fallback
+
+on:
+  push:
+    branches:
+      - fix/land-summary-frontend-fallback
+    paths:
+      - index.html
+      - tests/test_land_summary_frontend_fallback.py
+      - tools/apply_land_summary_frontend_fallback.py
+      - .github/workflows/land-summary-frontend-fallback.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_land_summary_frontend_fallback.py
+      - tools/apply_land_summary_frontend_fallback.py
+      - .github/workflows/land-summary-frontend-fallback.yml
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: LAND frontend fallback contract
+        run: python -m unittest tests.test_land_summary_frontend_fallback -v
