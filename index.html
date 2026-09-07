@@ -238,8 +238,8 @@ body{
   grid-template-columns:
     80px
     90px
-    70px
-    76px
+    100px
+    82px
     70px
     100px
     76px
@@ -252,8 +252,9 @@ body{
     minmax(230px,1.00fr) /* аналіз */
     310px                 /* TX16S */
     minmax(130px,.60fr);  /* дія пілота */
-  gap:5px;
-  min-width:1940px
+  column-gap:12px;
+  row-gap:5px;
+  min-width:1990px
 }
 .tl-header{
   padding:8px 10px;
@@ -279,6 +280,7 @@ body{
 .tl-time{color:var(--accent);font-family:monospace;font-weight:700}
 .tl-mode{color:var(--accent);font-weight:600}
 .tl-badge{font-family:monospace;font-weight:600}
+.tl-altitude-cell,.tl-distance-cell{white-space:nowrap}
 .tl-system{color:var(--text-main);overflow-wrap:anywhere;word-break:normal;min-width:0}
 .tl-pilot{color:#60a5fa;font-weight:600;overflow-wrap:anywhere;word-break:normal;min-width:0}
 .tl-system,.tl-pilot,.tl-badge,.tl-time,.tl-mode{margin:0;padding:0;line-height:1.2}
@@ -510,10 +512,11 @@ body{
 @media (max-width:1550px){
   .tl-header,.tl-item{
     grid-template-columns:
-      76px 84px 66px 70px 66px 94px 70px 64px 52px 70px 78px 160px
+      76px 84px 96px 78px 66px 94px 70px 64px 52px 70px 78px 160px
       minmax(205px,1fr) minmax(215px,1fr) 290px minmax(120px,.58fr);
-    gap:4px;
-    min-width:2010px;
+    column-gap:10px;
+    row-gap:4px;
+    min-width:2050px;
   }
   .tl-item{font-size:11px}
   .tl-header{font-size:10px}
@@ -3447,7 +3450,7 @@ function renderTimelineTable(items,containerId){
         <div class="tl-time">${item.time||'—'}</div>
         <div class="tl-mode">${item.mode||'—'}</div>
         <div class="tl-badge tl-altitude-cell">${item.alt||'—'}${landVerticalSpeed}</div>
-        <div class="tl-badge">${item.dist||'—'}</div>
+        <div class="tl-badge tl-distance-cell">${item.dist||'—'}</div>
         <div class="tl-badge">${azimuth}</div>
         <div class="tl-badge">${freq}</div>
         <div class="tl-badge">${voltage}</div>
