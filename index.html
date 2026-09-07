@@ -2548,7 +2548,7 @@ function renderResults(data){
 
   // TX16S: підтверджена схема цього борта.
   // SA=CH7, SB=CH8 — VTX; SC=CH15 + SF=CH10 — система скиду;
-  // SD=CH13 + SH=CH6 — одиночний скид. LS/RS у UI не показуються.
+  // SD=CH13 + SH=CH6 — EMERGENCY STOP. LS/RS у UI не показуються.
   // Аналіз лише читає RC_CHANNELS і не відправляє команди на борт.
   function timelineSeconds(t){
     const m=String(t||'').match(/(-?)(\d+):(\d+(?:\.\d+)?)/);
@@ -2603,7 +2603,11 @@ function renderResults(data){
     const emergencyStopEvents=[];
     const scTransitions=[];
     const sfActivations=[];
-    let prevSf=null, prevSh=null, prevScPos=null;
+    // SD_SH_ACTIVITY_ALERTS_V1 — report physical SD/SH activity separately
+    // from a confirmed EMERGENCY STOP command.
+    const sdTransitions=[];
+    const shActivations=[];
+    let prevSf=null, prevSh=null, prevScPos=null, prevSdPos=null;
     let emergencyStart=null;
 
     rows.forEach(row=>{
@@ -2619,6 +2623,13 @@ function renderResults(data){
           scTransitions.push({time:row.time||'',from:prevScPos,to:scPos});
         }
         prevScPos=scPos;
+      }
+
+      if(sdPos){
+        if(prevSdPos!==null&&sdPos!==prevSdPos){
+          sdTransitions.push({time:row.time||'',from:prevSdPos,to:sdPos});
+        }
+        prevSdPos=sdPos;
       }
 
       if(sf!==null){
@@ -2641,6 +2652,9 @@ function renderResults(data){
       }
 
       if(sh!==null){
+        if(prevSh===false && sh===true){
+          shActivations.push({time:row.time||'',sdPos,pwm:rcPwmValue(row,6)});
+        }
         if(prevSh===false && sh===true && sdPos===3){
           emergencyStart={time:row.time||'',startSec:rowSec,lastSec:rowSec,pwm:rcPwmValue(row,6)};
         }else if(emergencyStart&&sh===true&&sdPos===3&&rowSec!==null){
@@ -2674,6 +2688,22 @@ function renderResults(data){
     if(sfActivations.length){
       const first=sfActivations[0];
       out.push(`<span class="ai-jump" data-jump-time="${first.time}">🎚 <b>SF: зафіксовано ${sfActivations.length} активацій.</b>${first.time?` Перша — ${first.time}.`:''} Натисніть, щоб перейти до першої активації.</span>`);
+    }
+
+    if(sdTransitions.length){
+      const first=sdTransitions[0];
+      out.push(`<span class="ai-jump" data-jump-time="${first.time}">🎚 <b>SD: зафіксовано ${sdTransitions.length} перемикань.</b>${first.time?` Перше — ${first.time}.`:''} Натисніть, щоб перейти до першого перемикання.</span>`);
+    }
+    if(shActivations.length){
+      const first=shActivations[0];
+      out.push(`<span class="ai-jump" data-jump-time="${first.time}">🎚 <b>SH: зафіксовано ${shActivations.length} натискань.</b>${first.time?` Перше — ${first.time}.`:''} Натисніть, щоб перейти до першого натискання.</span>`);
+    }
+    if(sdTransitions.length&&shActivations.length&&!emergencyStopEvents.length){
+      const firstActivity=[...sdTransitions,...shActivations]
+        .filter(ev=>ev&&ev.time)
+        .sort((a,b)=>(timelineSeconds(a.time)??Infinity)-(timelineSeconds(b.time)??Infinity))[0];
+      const jump=firstActivity?.time||'';
+      out.push(`<span class="ai-jump"${jump?` data-jump-time="${jump}"`:''}>🟡 <b>SD/SH активувались, але одночасну команду EMERGENCY STOP не підтверджено.</b> SD та SH фіксуються окремо; EMERGENCY STOP зараховується лише коли SH натиснуто при SD=ЗАПОБІЖНИК ЗНЯТО.</span>`);
     }
 
     dropEvents.forEach((ev,i)=>{
@@ -3228,7 +3258,7 @@ function renderTimelineSticks(item){
       </div>
     </div>
     ${renderTx16Switches(item)}
-    <div class="sticks-note">SA/SB керують VTX; SC+SF — подвійний скид; SD+SH — одиночний скид. Аналіз лише читає RC_CHANNELS.</div>
+    <div class="sticks-note">SA/SB керують VTX; SC+SF — система скиду; SD+SH — EMERGENCY STOP. Аналіз лише читає RC_CHANNELS.</div>
     <div class="sticks-note">Відсоток = відхилення від 1500 us до приблизних меж 1000/2000 us. Це команда пілота, а не фактичний кут або потужність моторів.</div>
   `;
 }
