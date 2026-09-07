@@ -238,8 +238,8 @@ body{
   grid-template-columns:
     80px
     90px
-    100px
-    82px
+    150px
+    90px
     70px
     100px
     76px
@@ -252,9 +252,9 @@ body{
     minmax(230px,1.00fr) /* аналіз */
     310px                 /* TX16S */
     minmax(130px,.60fr);  /* дія пілота */
-  column-gap:12px;
+  column-gap:14px;
   row-gap:5px;
-  min-width:1990px
+  min-width:2060px
 }
 .tl-header{
   padding:8px 10px;
@@ -280,7 +280,8 @@ body{
 .tl-time{color:var(--accent);font-family:monospace;font-weight:700}
 .tl-mode{color:var(--accent);font-weight:600}
 .tl-badge{font-family:monospace;font-weight:600}
-.tl-altitude-cell,.tl-distance-cell{white-space:nowrap}
+.tl-altitude-cell,.tl-distance-cell{white-space:nowrap;min-width:0}
+.tl-altitude-cell{padding-right:8px}
 .tl-system{color:var(--text-main);overflow-wrap:anywhere;word-break:normal;min-width:0}
 .tl-pilot{color:#60a5fa;font-weight:600;overflow-wrap:anywhere;word-break:normal;min-width:0}
 .tl-system,.tl-pilot,.tl-badge,.tl-time,.tl-mode{margin:0;padding:0;line-height:1.2}
@@ -512,11 +513,11 @@ body{
 @media (max-width:1550px){
   .tl-header,.tl-item{
     grid-template-columns:
-      76px 84px 96px 78px 66px 94px 70px 64px 52px 70px 78px 160px
+      76px 84px 140px 86px 66px 94px 70px 64px 52px 70px 78px 160px
       minmax(205px,1fr) minmax(215px,1fr) 290px minmax(120px,.58fr);
-    column-gap:10px;
+    column-gap:12px;
     row-gap:4px;
-    min-width:2050px;
+    min-width:2110px;
   }
   .tl-item{font-size:11px}
   .tl-header{font-size:10px}
