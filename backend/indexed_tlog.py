@@ -48,16 +48,9 @@ def select_last_offsets_per_bucket(data_map, offsets, interval_s=0.2):
     return selected
 
 
-def build_indexed_numeric_series(filename, message_name, value_attr, interval_s=0.2):
-    """Build a sampled numeric time series from pymavlink's mmap TLOG index.
-
-    Returns None when mmap indexing is unavailable so callers can fall back to
-    their existing full recv_match path.
-    """
-    reader = None
+def build_indexed_numeric_series_from_reader(reader, message_name, value_attr, interval_s=0.2):
+    """Build a sampled numeric series from an already-created mmap TLOG reader."""
     try:
-        reader = mavutil.mavlink_connection(filename)
-
         if not all(hasattr(reader, attr) for attr in ("offsets", "name_to_id", "data_map")):
             return None
         if reader.data_map is None:
@@ -65,11 +58,7 @@ def build_indexed_numeric_series(filename, message_name, value_attr, interval_s=
 
         msg_id = reader.name_to_id.get(message_name)
         if msg_id is None:
-            return {
-                "samples": [],
-                "input_count": 0,
-                "decoded_count": 0,
-            }
+            return {"samples": [], "input_count": 0, "decoded_count": 0}
 
         raw_offsets = list(reader.offsets.get(msg_id, []))
         selected_offsets = select_last_offsets_per_bucket(
@@ -80,27 +69,50 @@ def build_indexed_numeric_series(filename, message_name, value_attr, interval_s=
 
         samples = []
         decoded_count = 0
-        for offset in selected_offsets:
-            reader.offset = int(offset)
-            reader.f.seek(int(offset))
-            msg = reader.recv_msg()
-            if msg is None or msg.get_type() != message_name:
-                continue
-            value = getattr(msg, value_attr, None)
-            timestamp = getattr(msg, "_timestamp", None)
-            try:
-                value = float(value)
-                timestamp = float(timestamp)
-            except (TypeError, ValueError):
-                continue
-            samples.append((timestamp, value))
-            decoded_count += 1
+        saved_offset = getattr(reader, "offset", None)
+        saved_pos = reader.f.tell() if hasattr(reader, "f") else None
+        try:
+            for offset in selected_offsets:
+                reader.offset = int(offset)
+                reader.f.seek(int(offset))
+                msg = reader.recv_msg()
+                if msg is None or msg.get_type() != message_name:
+                    continue
+                value = getattr(msg, value_attr, None)
+                timestamp = getattr(msg, "_timestamp", None)
+                try:
+                    value = float(value)
+                    timestamp = float(timestamp)
+                except (TypeError, ValueError):
+                    continue
+                samples.append((timestamp, value))
+                decoded_count += 1
+        finally:
+            if saved_offset is not None:
+                reader.offset = saved_offset
+            if saved_pos is not None:
+                reader.f.seek(saved_pos)
 
         return {
             "samples": samples,
             "input_count": len(raw_offsets),
             "decoded_count": decoded_count,
         }
+    except Exception:
+        return None
+
+
+def build_indexed_numeric_series(filename, message_name, value_attr, interval_s=0.2):
+    """Compatibility wrapper that owns a temporary mmap reader."""
+    reader = None
+    try:
+        reader = mavutil.mavlink_connection(filename)
+        return build_indexed_numeric_series_from_reader(
+            reader,
+            message_name,
+            value_attr,
+            interval_s=interval_s,
+        )
     except Exception:
         return None
     finally:
