@@ -48,6 +48,10 @@ try:
     from backend.indexed_tlog import build_indexed_numeric_series
 except ImportError:
     from indexed_tlog import build_indexed_numeric_series
+try:
+    from backend.raw_vfr import build_raw_vfr_hud_series_from_reader
+except ImportError:
+    from raw_vfr import build_raw_vfr_hud_series_from_reader
 
 app = FastAPI()
 
@@ -1477,6 +1481,19 @@ async def analyze(file: UploadFile = File(...)):
         _perf["efi_indexed_input_count"] = int((efi_indexed or {}).get("input_count", 0))
         _perf["efi_indexed_decoded_count"] = int((efi_indexed or {}).get("decoded_count", 0))
 
+        # VFR_RAW_FAST_PATH_V1 — reuse the already-built pymavlink mmap index and
+        # unpack every VFR_HUD payload directly from bytes, avoiding a pymavlink
+        # message object for this high-rate stream. Full recv_match fallback remains.
+        _vfr_raw_start = time.perf_counter()
+        vfr_raw = build_raw_vfr_hud_series_from_reader(mav)
+        _perf["vfr_raw_ms"] = round((time.perf_counter() - _vfr_raw_start) * 1000.0, 1)
+        vfr_raw_enabled = vfr_raw is not None
+        vfr_raw_samples = list((vfr_raw or {}).get("samples", []))
+        vfr_raw_sample_index = 0
+        _perf["vfr_raw_enabled"] = bool(vfr_raw_enabled)
+        _perf["vfr_raw_input_count"] = int((vfr_raw or {}).get("input_count", 0))
+        _perf["vfr_raw_decoded_count"] = int((vfr_raw or {}).get("decoded_count", 0))
+
         # Base
         message_count = 0
         max_alt = 0.0
@@ -2210,6 +2227,42 @@ async def analyze(file: UploadFile = File(...)):
                 severity=severity,
             )
 
+        def apply_raw_vfr_row(row, timestamp):
+            nonlocal latest_baro_alt, curr_azimuth, ground_baro_alt, baro_rel_alt
+            nonlocal max_speed, total_distance_travelled, curr_ground_speed
+            nonlocal last_ground_speed_timestamp, max_throttle
+
+            alt_val = row.get("alt")
+            if valid_number(alt_val):
+                latest_baro_alt = float(alt_val)
+                if ground_baro_alt is None:
+                    ground_baro_alt = latest_baro_alt
+                baro_rel_alt = max(0.0, latest_baro_alt - ground_baro_alt)
+                if global_rel_alt is None:
+                    update_flight_altitude(baro_rel_alt, timestamp, "BARO")
+
+            heading_val = row.get("heading")
+            if valid_number(heading_val):
+                heading_val = float(heading_val)
+                if 0.0 <= heading_val <= 360.0:
+                    curr_azimuth = heading_val % 360.0
+
+            ground_speed_val = row.get("groundspeed")
+            if valid_number(ground_speed_val):
+                ground_speed = max(0.0, float(ground_speed_val))
+                max_speed = max(max_speed, ground_speed)
+                if last_ground_speed_timestamp is not None and is_currently_armed:
+                    ground_dt = float(timestamp) - last_ground_speed_timestamp
+                    if 0.0 < ground_dt <= 5.0:
+                        total_distance_travelled += ground_speed * ground_dt
+                curr_ground_speed = ground_speed
+                last_ground_speed_timestamp = float(timestamp)
+
+            throttle_val = row.get("throttle")
+            if valid_number(throttle_val):
+                throttle_val = max(0.0, min(100.0, float(throttle_val)))
+                max_throttle = max(max_throttle, throttle_val)
+
         # ====================================================
         # MAVLINK LOOP
         # ====================================================
@@ -2217,13 +2270,15 @@ async def analyze(file: UploadFile = File(...)):
         # Fast analyzer path: decode only messages used by the flight analysis.
         # The full dynamic MAVLink catalog is parsed later from the same server-side file.
         needed_messages = [
-            "HEARTBEAT", "SYS_STATUS", "VFR_HUD", "ALTITUDE",
+            "HEARTBEAT", "SYS_STATUS", "ALTITUDE",
             "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "RC_CHANNELS",
             "RADIO", "RADIO_STATUS", "ATTITUDE", "VIBRATION",
             "TEMPERATURE", "HIGHRES_IMU", "SCALED_PRESSURE",
             "SCALED_PRESSURE2", "SCALED_PRESSURE3", "MCU_STATUS",
             "STATUSTEXT", "ESC_TELEMETRY_1_TO_4", "PARAM_VALUE",
         ]
+        if not vfr_raw_enabled:
+            needed_messages.append("VFR_HUD")
         if not efi_indexed_enabled:
             needed_messages.append("EFI_STATUS")
 
@@ -2249,6 +2304,11 @@ async def analyze(file: UploadFile = File(...)):
             _perf_recv_match_ms += (time.perf_counter() - _perf_recv_start) * 1000.0
 
             if msg is None:
+                if vfr_raw_enabled:
+                    while vfr_raw_sample_index < len(vfr_raw_samples):
+                        raw_vfr_row = vfr_raw_samples[vfr_raw_sample_index]
+                        apply_raw_vfr_row(raw_vfr_row, raw_vfr_row.get("timestamp", current_timestamp))
+                        vfr_raw_sample_index += 1
                 break
 
             message_count += 1
@@ -2263,6 +2323,15 @@ async def analyze(file: UploadFile = File(...)):
 
                 if first_timestamp is None:
                     first_timestamp = t_stamp
+
+                if vfr_raw_enabled:
+                    while (
+                        vfr_raw_sample_index < len(vfr_raw_samples)
+                        and vfr_raw_samples[vfr_raw_sample_index].get("timestamp", 0.0) <= current_timestamp
+                    ):
+                        raw_vfr_row = vfr_raw_samples[vfr_raw_sample_index]
+                        apply_raw_vfr_row(raw_vfr_row, raw_vfr_row.get("timestamp", current_timestamp))
+                        vfr_raw_sample_index += 1
 
                 if efi_indexed_enabled:
                     while (
@@ -4984,6 +5053,17 @@ async def analyze(file: UploadFile = File(...)):
             f"{item['type']} {item['work_ms'] / 1000.0:.2f} с ({item['count']})"
             for item in _perf.get("mavlink_profile", [])[:6]
         ]
+        ai_alerts.append(
+            "🚀 <b>VFR_HUD raw:</b> "
+            + (
+                f"увімкнено; в TLOG {_perf['vfr_raw_input_count']} повідомлень, "
+                f"raw-декодовано {_perf['vfr_raw_decoded_count']}, "
+                f"підготовка {_perf['vfr_raw_ms'] / 1000.0:.2f} с."
+                if _perf.get("vfr_raw_enabled")
+                else "недоступний — використано старий повний VFR_HUD шлях."
+            )
+        )
+
         ai_alerts.append(
             "⚡ <b>EFI_STATUS індекс:</b> "
             + (
