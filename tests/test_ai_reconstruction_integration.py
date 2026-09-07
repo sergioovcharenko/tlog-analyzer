@@ -37,6 +37,23 @@ class AIReconstructionIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(facts["critical_radio_episode"]["vtx_changed"])
 
+    def test_structured_vtx_change_across_blind_zone_is_preserved(self):
+        facts = build_ai_reconstruction_facts(
+            radio_loss_episodes=[{
+                "time_s": 90.0,
+                "dbm": -128,
+                "recovered": True,
+                "vtx_changed": True,
+            }],
+            mode_transitions=[],
+            altitude_samples=[{"time_s": 90.0, "altitude_m": 80.0}],
+            vtx_events=[],
+            home_distance_samples=[],
+            ended_armed=False,
+            power_metrics={},
+        )
+        self.assertTrue(facts["critical_radio_episode"]["vtx_changed"])
+
 
 if __name__ == "__main__":
     unittest.main()
