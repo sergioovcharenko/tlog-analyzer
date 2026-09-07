@@ -16,7 +16,7 @@ class UiCleanupContractTest(unittest.TestCase):
             "ai-alert-hidden-debug",
             "ai-alert-row",
             "ai-alert-needs-attention",
-            ".tl-altitude-cell{display:flex;flex-direction:column",
+            ".tl-altitude-cell{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:2px!important",
             ".land-vspeed-inline{display:block",
         ]
         for marker in required:
