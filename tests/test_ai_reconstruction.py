@@ -39,6 +39,84 @@ class AIReconstructionTest(unittest.TestCase):
         self.assertNotIn("помилка пілота", joined.lower())
         self.assertNotIn("потрібно було", joined.lower())
 
+    def test_repeated_minus_128_stable_100m_no_channel_change_is_explained(self):
+        facts = {
+            "radio_loss_episodes": [
+                {"time_s": 100.0, "dbm": -128, "recovered": True},
+                {"time_s": 140.0, "dbm": -128, "recovered": True},
+                {"time_s": 180.0, "dbm": -128, "recovered": False},
+            ],
+            "critical_radio_episode": {
+                "time_s": 180.0,
+                "altitude_m": 101.2,
+                "altitude_window_min_m": 99.1,
+                "altitude_window_max_m": 103.0,
+                "vtx_changed": False,
+            },
+            "mode_transitions": [],
+            "land_distance_home_m": None,
+            "ended_armed": False,
+            "power": {},
+        }
+        result = build_ai_reconstruction(facts)
+        joined = " ".join(
+            result["what_happened"]
+            + result["pilot_actions"]
+            + result["possible_alternatives"]
+            + result["evidence"]
+        ).lower()
+        self.assertIn("-128", joined)
+        self.assertIn("101.2", joined)
+        self.assertIn("вираженого набору висоти", joined)
+        self.assertIn("зміна vtx/відеоканалу", joined)
+        self.assertIn("могла", joined)
+
+    def test_confirmed_vtx_change_is_acknowledged_as_pilot_response(self):
+        facts = {
+            "radio_loss_episodes": [
+                {"time_s": 90.0, "dbm": -128, "recovered": True},
+                {"time_s": 120.0, "dbm": -128, "recovered": True},
+            ],
+            "critical_radio_episode": {
+                "time_s": 120.0,
+                "altitude_m": 80.0,
+                "altitude_window_min_m": 79.0,
+                "altitude_window_max_m": 83.0,
+                "vtx_changed": True,
+            },
+            "mode_transitions": [],
+            "land_distance_home_m": None,
+            "ended_armed": False,
+            "power": {},
+        }
+        result = build_ai_reconstruction(facts)
+        joined = " ".join(result["pilot_actions"]).lower()
+        self.assertIn("зміну vtx/відеоканалу зафіксовано", joined)
+        self.assertNotIn("зміна vtx/відеоканалу після критичного епізоду не зафіксована", joined)
+
+    def test_altitude_climb_after_radio_loss_is_acknowledged(self):
+        facts = {
+            "radio_loss_episodes": [
+                {"time_s": 200.0, "dbm": -128, "recovered": False},
+                {"time_s": 220.0, "dbm": -128, "recovered": False},
+            ],
+            "critical_radio_episode": {
+                "time_s": 220.0,
+                "altitude_m": 108.0,
+                "altitude_window_min_m": 96.0,
+                "altitude_window_max_m": 112.0,
+                "vtx_changed": False,
+            },
+            "mode_transitions": [],
+            "land_distance_home_m": None,
+            "ended_armed": False,
+            "power": {},
+        }
+        result = build_ai_reconstruction(facts)
+        joined = " ".join(result["pilot_actions"]).lower()
+        self.assertIn("набір висоти зафіксовано", joined)
+        self.assertNotIn("вираженого набору висоти після втрати зв’язку не зафіксовано", joined)
+
     def test_confirmed_vtx_change_is_not_reported_as_missing(self):
         facts = {
             "radio_loss_episodes": [{"time_s": 90.0, "dbm": -128, "recovered": True}],

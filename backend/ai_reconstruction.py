@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 STABLE_ALTITUDE_SPREAD_M = 5.0
+ALTITUDE_CLIMB_M = 8.0
 SHORT_RTL_LAND_S = 2.0
 LAND_AWAY_HOME_M = 100.0
 AI_REACTION_WINDOW_S = 10.0
@@ -133,35 +134,63 @@ def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
                 f"Зафіксовано повторні епізоди нестабільної радіолінії ({len(radio)})."
             )
         points += 1
+
+        dbm_values = [float(x["dbm"]) for x in radio if x.get("dbm") is not None]
+        if dbm_values:
+            worst_dbm = min(dbm_values)
+            critical_count = sum(1 for value in dbm_values if value <= -128)
+            if critical_count:
+                out["evidence"].append(
+                    f"Критичний рівень до {worst_dbm:.0f} dBm зафіксовано у {critical_count} епізодах."
+                )
+            else:
+                out["evidence"].append(f"Найгірший зафіксований рівень: {worst_dbm:.0f} dBm.")
+            points += 1
+
         if radio and radio[-1].get("recovered") is False:
             out["what_happened"].append(
                 "Останнє відновлення зв’язку після критичного епізоду не підтверджене TLOG."
             )
+            points += 1
+        elif radio and radio[-1].get("recovered") is True:
+            out["what_happened"].append("Після останнього критичного епізоду відновлення зв’язку підтверджене TLOG.")
             points += 1
 
         if episode:
             alt = episode.get("altitude_m")
             amin = episode.get("altitude_window_min_m")
             amax = episode.get("altitude_window_max_m")
-            if (
-                alt is not None
-                and amin is not None
-                and amax is not None
-                and (amax - amin) <= STABLE_ALTITUDE_SPREAD_M
-            ):
-                out["pilot_actions"].append(
-                    f"Висота утримувалась приблизно біля {alt:.1f} м; вираженого набору висоти після втрати зв’язку не зафіксовано."
-                )
-                out["possible_alternatives"].append(
-                    "Набір висоти інколи може покращити радіогоризонт, але TLOG не дозволяє стверджувати, що це гарантовано відновило б зв’язок."
-                )
-                points += 1
+            if alt is not None and amin is not None and amax is not None:
+                spread = float(amax) - float(amin)
+                if spread <= STABLE_ALTITUDE_SPREAD_M:
+                    out["pilot_actions"].append(
+                        f"Висота утримувалась приблизно біля {float(alt):.1f} м; вираженого набору висоти після втрати зв’язку не зафіксовано."
+                    )
+                    out["possible_alternatives"].append(
+                        "Набір висоти інколи може покращити радіогоризонт, але TLOG не дозволяє стверджувати, що це гарантовано відновило б зв’язок."
+                    )
+                    points += 1
+                elif float(alt) - float(amin) >= ALTITUDE_CLIMB_M:
+                    out["pilot_actions"].append(
+                        f"Набір висоти зафіксовано: у критичному вікні висота змінювалась приблизно від {float(amin):.1f} до {float(amax):.1f} м."
+                    )
+                    points += 1
+                else:
+                    out["pilot_actions"].append(
+                        f"Висота в критичному вікні помітно змінювалась ({float(amin):.1f}–{float(amax):.1f} м), тому стверджувати про її стабільне утримання не можна."
+                    )
+
             if episode.get("vtx_changed") is False:
                 out["pilot_actions"].append(
                     "Зміна VTX/відеоканалу після критичного епізоду не зафіксована."
                 )
                 out["possible_alternatives"].append(
                     "Зміна відеоканалу могла бути одним із варіантів перевірки якості відеолінії, але її ефект за цим TLOG наперед невідомий."
+                )
+                points += 1
+            elif episode.get("vtx_changed") is True:
+                out["pilot_actions"].append(
+                    "Зміну VTX/відеоканалу зафіксовано як реакцію в районі критичного епізоду."
                 )
                 points += 1
 
