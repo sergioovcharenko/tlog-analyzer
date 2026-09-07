@@ -6,6 +6,9 @@ on:
       - feature/radio-summary-cleanup
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply radio summary cleanup
+        run: python tools/apply_radio_summary_cleanup.py
       - name: Run radio summary cleanup contract
         run: python -m unittest tests/test_radio_summary_cleanup.py -v
       - name: Compile backend
@@ -30,3 +35,15 @@ jobs:
               path=f.name
           subprocess.run(['node','--check',path],check=True)
           PY
+      - name: Commit generated integration
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "ui: show min RSSI and dBm worst/average"
+          git pull --rebase origin feature/radio-summary-cleanup
+          git push
