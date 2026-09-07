@@ -2501,7 +2501,7 @@ function renderAiReconstruction(recon){
 
 function summarizeEngineLoad(timeline){
   const values=(Array.isArray(timeline)?timeline:[])
-    .filter(row=>row&&row.eventType==='SNAPSHOT'&&String(row.mode||'').toUpperCase()!=='DISARMED')
+    .filter(row=>row&&row.eventType==='SNAPSHOT'&&String(row.mode||'').toUpperCase()!=='DISARMED'&&row.engineLoad!==null&&row.engineLoad!==undefined)
     .map(row=>Number(row.engineLoad))
     .filter(Number.isFinite)
     .map(v=>Math.max(0,Math.min(100,v)));
