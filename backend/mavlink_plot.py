@@ -142,21 +142,61 @@ def _severity_level(severity, is_error=False, event_type=""):
     return "info"
 
 
+def _important_board_message_level(text):
+    """Upgrade known ArduPilot fault/navigation STATUSTEXT for the graph panel."""
+    lower = str(text or "").lower()
+    error_tokens = (
+        "crash:",
+        "potential thrust loss",
+        "thrust loss",
+    )
+    warning_tokens = (
+        "ekf variance",
+        "stopped aiding",
+        "need position estimate",
+        "requires position",
+        "smartrtl deactivated",
+        "smartrtl failed",
+        "bad position",
+        "buffer full",
+        "prearm:",
+    )
+    if any(token in lower for token in error_tokens):
+        return "error"
+    if any(token in lower for token in warning_tokens):
+        return "warning"
+    return None
+
+
+def _stronger_board_level(base_level, text_level):
+    """Only upgrade visual severity; never downgrade an original MAVLink severity."""
+    rank = {"recovery": 0, "info": 1, "warning": 2, "error": 3}
+    if text_level is None:
+        return base_level
+    return text_level if rank.get(text_level, 1) > rank.get(base_level, 1) else base_level
+
+
 def build_board_messages(timeline_rows, base_timestamp):
-    """Return only raw ArduPilot/MAVLink STATUSTEXT received from the board."""
+    """Return raw ArduPilot/MAVLink STATUSTEXT received from the board."""
     base = float(base_timestamp or 0.0)
     out = []
     seen = set()
     for row in timeline_rows or []:
         if not isinstance(row, dict):
             continue
-        text = str(row.get("system_text") or "").strip()
+        text = str(row.get("system_text") or row.get("systemText") or "").strip()
         ts = row.get("timestamp")
         if not text or not _finite_scalar(ts):
             continue
+        base_level = _severity_level(
+            row.get("severity"),
+            row.get("is_error") or row.get("isError"),
+            row.get("eventType"),
+        )
+        level = _stronger_board_level(base_level, _important_board_message_level(text))
         item = {
             "time_ms": int(round((float(ts) - base) * 1000.0)),
-            "level": _severity_level(row.get("severity"), row.get("isError"), row.get("eventType")),
+            "level": level,
             "text": text,
             "event_type": str(row.get("eventType") or "SYSTEM"),
             "source": "board",
