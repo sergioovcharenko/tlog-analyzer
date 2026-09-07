@@ -1,0 +1,43 @@
+name: Revert failed MAVLink speed optimization
+
+on:
+  push:
+    branches:
+      - revert-mavlink-speed-optimization
+    paths:
+      - tools/revert_failed_mavlink_speed_optimization.py
+      - .github/workflows/revert-failed-mavlink-speed-optimization.yml
+
+permissions:
+  contents: write
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore recv_match path
+        run: python tools/revert_failed_mavlink_speed_optimization.py
+      - name: Remove failed optimization artifacts
+        run: |
+          git rm -f \
+            .github/workflows/mavlink-speed-optimization.yml \
+            tests/test_mavlink_recv_fast_path_contract.py \
+            tests/test_mavlink_recv_fast_path_semantics.py \
+            tools/apply_mavlink_speed_optimization.py \
+            docs/superpowers/plans/2026-09-07-mavlink-speed-optimization.md \
+            docs/superpowers/specs/2026-09-07-mavlink-speed-optimization-design.md \
+            tools/revert_failed_mavlink_speed_optimization.py \
+            .github/workflows/revert-failed-mavlink-speed-optimization.yml
+      - name: Compile backend
+        run: python -m py_compile backend/main.py
+      - name: Commit rollback
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py
+          git commit -m "revert: restore MAVLink recv_match path"
+          git push
