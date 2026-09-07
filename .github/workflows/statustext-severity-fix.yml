@@ -1,0 +1,21 @@
+name: STATUSTEXT severity passthrough
+
+on:
+  push:
+    branches:
+      - feature/statustext-severity-fix
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run STATUSTEXT severity regression
+        run: python -m unittest tests/test_statustext_severity_passthrough.py -v
+      - name: Compile backend
+        if: success()
+        run: python -m py_compile backend/main.py backend/mavlink_plot.py
