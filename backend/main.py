@@ -4808,6 +4808,7 @@ async def analyze(file: UploadFile = File(...)):
                 "time_s": float(_start) - float(base_t),
                 "dbm": _ep.get("startDbm", -128),
                 "recovered": bool(_ep.get("recovered")),
+                "vtx_changed": bool(_ep.get("vtxChangedAcrossBlindZone")),
             })
 
         _ai_mode_transitions = []
