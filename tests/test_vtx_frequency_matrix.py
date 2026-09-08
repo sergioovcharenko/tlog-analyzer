@@ -17,16 +17,23 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
         self.assertIn("${freq} — ${item.switches}", INDEX)
         self.assertNotIn("${item.frequency} MHz — ${item.switches} перемикань", INDEX)
 
-    def test_best_stable_frequency_uses_average_dbm_and_minus_85_normal_limit(self):
-        self.assertIn("VTX_STABLE_DBM_LIMIT=-85", INDEX)
-        self.assertIn("dbmSum", INDEX)
-        self.assertIn("dbmSamples", INDEX)
-        self.assertIn("avgDbm", INDEX)
+    def test_frequency_stability_uses_only_drop_zone_from_minus_85_to_minus_128(self):
+        self.assertIn("VTX_NORMAL_DBM_LIMIT=-85", INDEX)
+        self.assertIn("VTX_MIN_DBM=-128", INDEX)
+        self.assertIn("dropDbmSum", INDEX)
+        self.assertIn("dropDbmSamples", INDEX)
+        self.assertIn("avgDropDbm", INDEX)
+        self.assertIn("dbm<=VTX_NORMAL_DBM_LIMIT&&dbm>=VTX_MIN_DBM", INDEX)
         self.assertIn("stableFrequency", INDEX)
-        self.assertIn("item.avgDbm>=VTX_STABLE_DBM_LIMIT", INDEX)
         self.assertIn("vtx-frequency-best", INDEX)
 
-    def test_minus_128_is_not_removed_from_frequency_average(self):
+    def test_good_dbm_values_do_not_pull_drop_average_up(self):
+        self.assertNotIn("item.dbmSum+=dbm", INDEX)
+        self.assertIn("item.dropDbmSum+=dbm", INDEX)
+        self.assertIn("AVG ПРОСІДАННЯ", INDEX)
+
+    def test_minus_128_is_included_in_drop_average(self):
+        self.assertIn("dbm>=VTX_MIN_DBM", INDEX)
         self.assertNotIn("dbm>-128", INDEX)
         self.assertNotIn("dbm!==-128", INDEX)
 
