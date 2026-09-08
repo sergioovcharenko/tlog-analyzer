@@ -7,6 +7,8 @@ INDEX = ROOT / "index.html"
 
 
 class AttitudeDbmColorsContract(unittest.TestCase):
+    """Contract for live graph dBm quality coloring in the avionics panel."""
+
     @classmethod
     def setUpClass(cls):
         cls.html = INDEX.read_text(encoding="utf-8")
