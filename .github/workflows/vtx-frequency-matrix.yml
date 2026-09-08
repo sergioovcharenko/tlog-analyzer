@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/vtx-frequency-matrix
-      - fix/vtx-dbm-drop-average
   pull_request:
 
 permissions:
@@ -40,5 +39,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "ui: calculate VTX dBm drop-zone average"
+          git commit -m "ui: render VTX frequency matrix with dBm stability"
           git push
