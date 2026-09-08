@@ -40,9 +40,9 @@ except ImportError:
 
 # AI_RECONSTRUCTION_IMPORT_V1
 try:
-    from backend.ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts
+    from backend.ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts, augment_ai_reconstruction_with_prearm_diagnostics
 except ImportError:
-    from ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts
+    from ai_reconstruction import build_ai_reconstruction, build_ai_reconstruction_facts, augment_ai_reconstruction_with_prearm_diagnostics
 
 try:
     from backend.indexed_tlog import build_indexed_numeric_series
@@ -1878,6 +1878,7 @@ async def analyze(file: UploadFile = File(...)):
                 "crash ",
                 "failsafe",
                 "ekf variance",
+                "gyros inconsistent",
                 "ekf3 imu0 stopped aiding",
                 "smart rtl failed",
                 "smart rtl deactivated",
@@ -5063,6 +5064,9 @@ async def analyze(file: UploadFile = File(...)):
             power_metrics=_ai_power_metrics,
         )
         ai_reconstruction = build_ai_reconstruction(ai_reconstruction_facts)
+        ai_reconstruction = augment_ai_reconstruction_with_prearm_diagnostics(
+            ai_reconstruction, timeline
+        )
         _perf["ai_ms"] = round((time.perf_counter() - _perf_ai_start) * 1000.0, 1)
 
         _perf_graphs_start = time.perf_counter()
