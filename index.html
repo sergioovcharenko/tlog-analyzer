@@ -200,6 +200,25 @@ body{
   gap:8px;
   align-items:stretch;
 }
+.vtx-frequency-header{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:28px;
+  font-size:12px;
+  font-weight:800;
+  color:var(--text-muted);
+}
+.vtx-frequency-row-label{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:800;
+  color:var(--text-muted);
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  background:var(--bg-header);
+}
 .vtx-frequency-band{
   display:flex;
   align-items:center;
@@ -2566,6 +2585,11 @@ function summarizeEngineLoad(timeline){
 const VTX_NORMAL_DBM_LIMIT=-85;
 const VTX_MIN_STABILITY_SAMPLES=3;
 const VTX_FREQUENCY_MATRIX={'5.2':[5180,5240,5300],'5.5':[5520,5580,5640],'5.8':[5700,5765,5825]};
+const VTX_MATRIX_ROWS=[
+  {label:'K1',frequencies:[5180,5520,5700]},
+  {label:'K2',frequencies:[5240,5580,5765]},
+  {label:'K3',frequencies:[5300,5640,5825]}
+];
 
 function summarizeVtxFrequencySelections(timeline,frequencyDbmStats){
   const stats=new Map();
@@ -2979,15 +3003,24 @@ function renderResults(data){
   const video=data.video||{};
   const vtxFlight=summarizeVtxFrequencySelections(data.timeline,video.frequencyDbmStats);
   const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[item.frequency,item]));
-  const vtxMatrixHtml=Object.entries(VTX_FREQUENCY_MATRIX).map(([band,freqs])=>{
-    const cells=freqs.map(freq=>{
-      const item=vtxByFrequency.get(freq)||{switches:0,avgDbm:null,dbmSamples:0};
-      const best=freq===vtxFlight.stableFrequency,worst=freq===vtxFlight.worstFrequency;
-      const dbmText=item.dbmSamples>0&&item.avgDbm!==null?`AVG ${item.avgDbm.toFixed(1)} dBm`:'dBm —';
-      return `<div class="vtx-frequency-cell${best?' vtx-frequency-best':''}${worst?' vtx-frequency-worst':''}"><div class="vtx-frequency-main">${freq} — ${item.switches}</div><div class="vtx-frequency-dbm">${dbmText}</div></div>`;
-    }).join('');
-    return `<div class="vtx-frequency-band">${band}</div>${cells}`;
-  }).join('');
+  const vtxCellHtml=freq=>{
+    const item=vtxByFrequency.get(freq)||{switches:0,avgDbm:null,dbmSamples:0};
+    const best=freq===vtxFlight.stableFrequency,worst=freq===vtxFlight.worstFrequency;
+    const dbmText=item.dbmSamples>0&&item.avgDbm!==null?`AVG ${item.avgDbm.toFixed(1)} dBm`:'dBm —';
+    return `<div class="vtx-frequency-cell${best?' vtx-frequency-best':''}${worst?' vtx-frequency-worst':''}"><div class="vtx-frequency-main">${freq} — ${item.switches}</div><div class="vtx-frequency-dbm">${dbmText}</div></div>`;
+  };
+  const vtxRowLabels={
+    K1:'<div class="vtx-frequency-row-label">K1</div>',
+    K2:'<div class="vtx-frequency-row-label">K2</div>',
+    K3:'<div class="vtx-frequency-row-label">K3</div>'
+  };
+  const vtxMatrixHtml=`
+    <div></div>
+    <div class="vtx-frequency-header">5.2</div>
+    <div class="vtx-frequency-header">5.5</div>
+    <div class="vtx-frequency-header">5.8</div>
+    ${VTX_MATRIX_ROWS.map(row=>`${vtxRowLabels[row.label]}${row.frequencies.map(vtxCellHtml).join('')}`).join('')}
+  `;
   document.getElementById('videoGrid').innerHTML=`
     <div class="vtx-matrix-card">
       <div class="card-title">ВИКОРИСТАНІ VTX ЧАСТОТИ</div>
