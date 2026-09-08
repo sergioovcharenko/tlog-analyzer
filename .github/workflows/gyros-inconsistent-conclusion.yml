@@ -1,0 +1,23 @@
+name: Gyros inconsistent conclusion
+
+on:
+  push:
+    branches:
+      - feature/gyros-inconsistent-conclusion
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run Gyros inconsistent contract
+        run: python -m unittest tests/test_gyros_inconsistent_conclusion.py -v
+      - name: Check backend syntax
+        run: python -m py_compile backend/main.py backend/ai_reconstruction.py
