@@ -3,32 +3,40 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "index.html").read_text(encoding="utf-8")
+BACKEND = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")
 
 
 class VtxFrequencyMatrixTest(unittest.TestCase):
-    def test_matrix_has_fixed_52_55_58_rows_and_three_channels_each(self):
+    def test_matrix_has_fixed_rows(self):
         self.assertIn("ВИКОРИСТАНІ VTX ЧАСТОТИ", INDEX)
         self.assertIn("'5.2':[5180,5240,5300]", INDEX)
         self.assertIn("'5.5':[5520,5580,5640]", INDEX)
         self.assertIn("'5.8':[5700,5765,5825]", INDEX)
-        self.assertIn("vtx-frequency-grid", INDEX)
 
-    def test_cell_main_label_is_frequency_dash_count_without_switch_word(self):
-        self.assertIn("${freq} — ${item.switches}", INDEX)
-        self.assertNotIn("${item.frequency} MHz — ${item.switches} перемикань", INDEX)
+    def test_backend_averages_all_raw_dbm_per_active_frequency(self):
+        self.assertIn("vtx_dbm_stats", BACKEND)
+        self.assertIn("vtx_state = get_vtx_state(ch7_current, ch8_current)", BACKEND)
+        self.assertIn('bucket["sum"] += float(dbm_val)', BACKEND)
+        self.assertIn('bucket["samples"] += 1', BACKEND)
+        self.assertIn('"frequencyDbmStats": [', BACKEND)
+        self.assertIn('"avgDbm": round(bucket["sum"] / bucket["samples"], 1)', BACKEND)
 
-    def test_best_stable_frequency_uses_average_dbm_and_minus_85_normal_limit(self):
-        self.assertIn("VTX_STABLE_DBM_LIMIT=-85", INDEX)
-        self.assertIn("dbmSum", INDEX)
-        self.assertIn("dbmSamples", INDEX)
-        self.assertIn("avgDbm", INDEX)
+    def test_minus_128_is_included(self):
+        self.assertIn("if dbm_val != 0:", BACKEND)
+        self.assertNotIn("dbm_val > -128", BACKEND)
+        self.assertNotIn("dbm_val != -128", BACKEND)
+
+    def test_frontend_marks_best_green_and_worst_red(self):
+        self.assertIn("video.frequencyDbmStats", INDEX)
         self.assertIn("stableFrequency", INDEX)
-        self.assertIn("item.avgDbm>=VTX_STABLE_DBM_LIMIT", INDEX)
+        self.assertIn("worstFrequency", INDEX)
         self.assertIn("vtx-frequency-best", INDEX)
+        self.assertIn("vtx-frequency-worst", INDEX)
+        self.assertIn("AVG ${item.avgDbm.toFixed(1)} dBm", INDEX)
 
-    def test_minus_128_is_not_removed_from_frequency_average(self):
-        self.assertNotIn("dbm>-128", INDEX)
-        self.assertNotIn("dbm!==-128", INDEX)
+    def test_minus_85_is_reference_only(self):
+        self.assertIn("≥ -85 dBm — норма", INDEX)
+        self.assertNotIn("item.avgDbm>=VTX_STABLE_DBM_LIMIT", INDEX)
 
 
 if __name__ == "__main__":
