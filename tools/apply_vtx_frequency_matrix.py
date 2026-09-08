@@ -14,9 +14,8 @@ if ".vtx-frequency-worst{" not in html:
     html = html.replace(anchor, insert, 1)
 
 # ---------- frontend helper ----------
-start = html.find("const VTX_")
-end_marker = "\nfunction summarizeEngineLoad"
-end = html.find(end_marker, start)
+start = html.find("const VTX_NORMAL_DBM_LIMIT")
+end = html.find("function summarizeEngineLoad", start)
 if start < 0 or end < 0:
     raise SystemExit("VTX helper region not found")
 new_helper = r'''const VTX_NORMAL_DBM_LIMIT=-85;
@@ -60,6 +59,7 @@ function summarizeVtxFrequencySelections(timeline,frequencyDbmStats){
     worstFrequency:candidates.length>1?candidates[candidates.length-1].frequency:null
   };
 }
+
 '''
 html = html[:start] + new_helper + html[end:]
 
