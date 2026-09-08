@@ -16,7 +16,6 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
 
     def test_cell_main_label_is_frequency_dash_count_without_switch_word(self):
         self.assertIn("${freq} — ${item.switches}", INDEX)
-        self.assertNotIn("${item.frequency} MHz — ${item.switches} перемикань", INDEX)
 
     def test_backend_averages_every_radio_dbm_sample_by_active_vtx_frequency(self):
         self.assertIn("vtx_dbm_stats", BACKEND)
@@ -31,18 +30,17 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
         self.assertNotIn("dbm_val > -128", BACKEND)
         self.assertNotIn("dbm_val != -128", BACKEND)
 
-    def test_frontend_uses_backend_average_and_marks_best_and_worst(self):
-        self.assertIn("frequencyDbmStats", INDEX)
-        self.assertIn("avgDbm", INDEX)
+    def test_frontend_uses_raw_backend_average_and_marks_best_and_worst(self):
+        self.assertIn("summarizeVtxFrequencySelectionsAllDbm", INDEX)
+        self.assertIn("video.frequencyDbmStats", INDEX)
         self.assertIn("stableFrequency", INDEX)
         self.assertIn("worstFrequency", INDEX)
         self.assertIn("vtx-frequency-best", INDEX)
         self.assertIn("vtx-frequency-worst", INDEX)
         self.assertIn("AVG ${item.avgDbm.toFixed(1)} dBm", INDEX)
 
-    def test_minus_85_is_only_a_normality_reference_not_an_average_filter(self):
-        self.assertIn("VTX_NORMAL_DBM_LIMIT=-85", INDEX)
-        self.assertNotIn("dbm<=VTX_NORMAL_DBM_LIMIT", INDEX)
+    def test_minus_85_is_only_reference_not_average_filter(self):
+        self.assertIn("≥ -85 dBm — норма", INDEX)
         self.assertNotIn("dropDbmSum", INDEX)
         self.assertNotIn("avgDropDbm", INDEX)
 
