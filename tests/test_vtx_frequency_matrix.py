@@ -34,6 +34,11 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
         self.assertIn("vtx-frequency-worst", INDEX)
         self.assertIn("AVG ${item.avgDbm.toFixed(1)} dBm", INDEX)
 
+    def test_unused_frequency_keeps_missing_dbm_as_null_not_zero(self):
+        self.assertIn("row?.avgDbm===null||row?.avgDbm===undefined", INDEX)
+        self.assertIn("item.avgDbm=hasAvg&&Number.isFinite(avg)?avg:null", INDEX)
+        self.assertIn("item.dbmSamples>0&&item.avgDbm!==null", INDEX)
+
     def test_minus_85_is_reference_only(self):
         self.assertIn("≥ -85 dBm — норма", INDEX)
         self.assertNotIn("item.avgDbm>=VTX_STABLE_DBM_LIMIT", INDEX)
