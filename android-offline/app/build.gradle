@@ -31,6 +31,7 @@ chaquopy {
     defaultConfig {
         version = '3.11'
         pip {
+            install '../fastcrc_stub'
             install 'fastapi==0.115.8'
             install 'uvicorn==0.34.0'
             install 'python-multipart==0.0.20'
