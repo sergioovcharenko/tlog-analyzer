@@ -1,0 +1,34 @@
+name: Gyros inconsistent conclusion
+
+on:
+  push:
+    branches:
+      - feature/gyros-inconsistent-conclusion
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply Gyros inconsistent integration
+        run: python tools/apply_gyros_inconsistent_conclusion.py
+      - name: Run Gyros inconsistent contract
+        run: python -m unittest tests/test_gyros_inconsistent_conclusion.py -v
+      - name: Check backend syntax
+        run: python -m py_compile backend/main.py backend/ai_reconstruction.py
+      - name: Commit generated Gyros inconsistent integration
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- backend/main.py backend/ai_reconstruction.py; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py backend/ai_reconstruction.py
+          git commit -m "feat: surface Gyros inconsistent in conclusion"
+          git push
