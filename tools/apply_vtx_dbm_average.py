@@ -1,27 +1,35 @@
 from pathlib import Path
 
-index_path = Path('index.html')
-backend_path = Path('backend/main.py')
-html = index_path.read_text(encoding='utf-8')
-backend = backend_path.read_text(encoding='utf-8')
+index_path=Path('index.html')
+backend_path=Path('backend/main.py')
+html=index_path.read_text(encoding='utf-8')
+backend=backend_path.read_text(encoding='utf-8')
 
+# Red highlight for the worst average.
 if '.vtx-frequency-worst{' not in html:
-    anchor = '.vtx-frequency-best .vtx-frequency-main{color:var(--success)}'
+    anchor='.vtx-frequency-best .vtx-frequency-main{color:var(--success)}'
     if anchor not in html:
-        raise SystemExit('VTX best CSS anchor not found')
-    html = html.replace(anchor, anchor + '''
-.vtx-frequency-worst{
-  border-color:var(--danger)!important;
-  background:rgba(239,68,68,.12)!important;
-  box-shadow:inset 0 0 0 1px rgba(239,68,68,.20);
-}
-.vtx-frequency-worst .vtx-frequency-main{color:var(--danger)}''', 1)
+        raise SystemExit('VTX CSS anchor not found')
+    html=html.replace(anchor,anchor+'''\n.vtx-frequency-worst{\n  border-color:var(--danger)!important;\n  background:rgba(239,68,68,.12)!important;\n  box-shadow:inset 0 0 0 1px rgba(239,68,68,.20);\n}\n.vtx-frequency-worst .vtx-frequency-main{color:var(--danger)}''',1)
 
-new_helper = r'''const VTX_NORMAL_DBM_LIMIT=-85;
-const VTX_MIN_STABILITY_SAMPLES=3;
-const VTX_FREQUENCY_MATRIX={'5.2':[5180,5240,5300],'5.5':[5520,5580,5640],'5.8':[5700,5765,5825]};
+# Add a unique helper; leave the legacy helper untouched to avoid duplicate const declarations.
+marker_start='/* VTX_ALL_DBM_AVERAGE_V1_START */'
+marker_end='/* VTX_ALL_DBM_AVERAGE_V1_END */'
+if marker_start in html and marker_end in html:
+    a=html.index(marker_start); b=html.index(marker_end,a)+len(marker_end)
+    html=html[:a]+html[b:]
 
-function summarizeVtxFrequencySelections(timeline,frequencyDbmStats){
+legacy_fn=html.find('function summarizeVtxFrequencySelections')
+if legacy_fn<0:
+    raise SystemExit('legacy VTX helper not found')
+legacy_stable=html.find('stableFrequency',legacy_fn)
+legacy_end=html.find('\n}',legacy_stable)
+if legacy_stable<0 or legacy_end<0:
+    raise SystemExit('legacy VTX helper end not found')
+legacy_end+=2
+
+new_helper=r'''\n/* VTX_ALL_DBM_AVERAGE_V1_START */
+function summarizeVtxFrequencySelectionsAllDbm(timeline,frequencyDbmStats){
   const stats=new Map();
   Object.values(VTX_FREQUENCY_MATRIX).flat().forEach(freq=>stats.set(freq,{frequency:freq,switches:0,avgDbm:null,dbmSamples:0}));
   let previous=null,totalSwitches=0;
@@ -41,40 +49,21 @@ function summarizeVtxFrequencySelections(timeline,frequencyDbmStats){
     item.dbmSamples=Number.isFinite(samples)?samples:0;
   }
   const frequencies=[...stats.values()];
-  const candidates=frequencies.filter(item=>item.dbmSamples>=VTX_MIN_STABILITY_SAMPLES&&Number.isFinite(item.avgDbm)).sort((a,b)=>(b.avgDbm-a.avgDbm)||(b.dbmSamples-a.dbmSamples));
+  const candidates=frequencies.filter(item=>item.dbmSamples>=3&&Number.isFinite(item.avgDbm)).sort((a,b)=>(b.avgDbm-a.avgDbm)||(b.dbmSamples-a.dbmSamples));
   return {totalSwitches,frequencies,stableFrequency:candidates.length?candidates[0].frequency:null,worstFrequency:candidates.length>1?candidates[candidates.length-1].frequency:null};
-}'''
+}
+/* VTX_ALL_DBM_AVERAGE_V1_END */'''
+html=html[:legacy_end]+new_helper+html[legacy_end:]
 
-# Remove every existing VTX helper block, then insert one canonical block.
-blocks=[]
-search_from=0
-while True:
-    fn=html.find('function summarizeVtxFrequencySelections',search_from)
-    if fn<0:
-        break
-    start=html.rfind('const VTX_',0,fn)
-    stable=html.find('stableFrequency',fn)
-    end=html.find('\n}',stable)
-    if min(start,stable,end)<0:
-        raise SystemExit(f'VTX helper anchors not found: {start}/{fn}/{stable}/{end}')
-    blocks.append((start,end+2))
-    search_from=end+2
-if not blocks:
-    raise SystemExit('No VTX helper block found')
-insert_at=blocks[0][0]
-for start,end in reversed(blocks):
-    html=html[:start]+html[end:]
-html=html[:insert_at]+new_helper+html[insert_at:]
-
-# Normalize call site to use backend raw per-frequency dBm stats.
-html=html.replace('const vtxFlight=summarizeVtxFrequencySelections(data.timeline);','const vtxFlight=summarizeVtxFrequencySelections(data.timeline,video.frequencyDbmStats);',1)
-if 'const vtxFlight=summarizeVtxFrequencySelections(data.timeline,video.frequencyDbmStats);' not in html:
-    raise SystemExit('VTX summary call not found')
+html=html.replace('const vtxFlight=summarizeVtxFrequencySelections(data.timeline);','const vtxFlight=summarizeVtxFrequencySelectionsAllDbm(data.timeline,video.frequencyDbmStats);',1)
+html=html.replace('const vtxFlight=summarizeVtxFrequencySelections(data.timeline,video.frequencyDbmStats);','const vtxFlight=summarizeVtxFrequencySelectionsAllDbm(data.timeline,video.frequencyDbmStats);',1)
+if 'summarizeVtxFrequencySelectionsAllDbm(data.timeline,video.frequencyDbmStats)' not in html:
+    raise SystemExit('VTX call site not found')
 
 render_start=html.find('  const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[item.frequency,item]));')
 render_end=html.find('\n\n  // V23.9:',render_start)
 if render_start<0 or render_end<0:
-    raise SystemExit(f'VTX render anchors not found: {render_start}/{render_end}')
+    raise SystemExit('VTX render anchors not found')
 new_render=r'''  const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[item.frequency,item]));
   const vtxMatrixHtml=Object.entries(VTX_FREQUENCY_MATRIX).map(([band,freqs])=>{
     const cells=freqs.map(freq=>{
@@ -92,12 +81,13 @@ new_render=r'''  const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[i
     <div class="vtx-matrix-card">
       <div class="card-title">ВИКОРИСТАНІ VTX ЧАСТОТИ</div>
       <div class="vtx-frequency-grid">${vtxMatrixHtml}</div>
-      <div class="card-desc">AVG = сума всіх RADIO/RADIO_STATUS dBm-відліків на активній частоті / кількість відліків; -128 включено. ≥ ${VTX_NORMAL_DBM_LIMIT} dBm — норма. Зелена — найкраще середнє, червона — найгірше.</div>
+      <div class="card-desc">AVG = сума всіх RADIO/RADIO_STATUS dBm-відліків на активній частоті / кількість відліків; -128 включено. ≥ -85 dBm — норма. Зелена — найкраще середнє, червона — найгірше.</div>
     </div>
     ${createCard('Змін VTX',video.changeCount??vtxFlight.totalSwitches)}
   `;'''
 html=html[:render_start]+new_render+html[render_end:]
 
+# Backend raw per-frequency average.
 init_anchor='        dbm_sample_count = 0\n        telem_rssi_raw = None'
 init_repl='''        dbm_sample_count = 0
         vtx_dbm_stats = {
