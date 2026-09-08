@@ -2578,11 +2578,11 @@ function summarizeVtxFrequencySelections(timeline,frequencyDbmStats){
   }
   for(const row of (Array.isArray(frequencyDbmStats)?frequencyDbmStats:[])){
     const f=Math.round(Number(row?.frequency)); if(!stats.has(f))continue;
-    const item=stats.get(f),avg=Number(row?.avgDbm),samples=Number(row?.samples);
-    item.avgDbm=Number.isFinite(avg)?avg:null; item.dbmSamples=Number.isFinite(samples)?samples:0;
+    const item=stats.get(f),hasAvg=!(row?.avgDbm===null||row?.avgDbm===undefined),avg=hasAvg?Number(row.avgDbm):NaN,samples=Number(row?.samples);
+    item.avgDbm=hasAvg&&Number.isFinite(avg)?avg:null; item.dbmSamples=Number.isFinite(samples)?samples:0;
   }
   const frequencies=[...stats.values()];
-  const candidates=frequencies.filter(item=>item.dbmSamples>=VTX_MIN_STABILITY_SAMPLES&&Number.isFinite(item.avgDbm)).sort((a,b)=>(b.avgDbm-a.avgDbm)||(b.dbmSamples-a.dbmSamples));
+  const candidates=frequencies.filter(item=>item.dbmSamples>=VTX_MIN_STABILITY_SAMPLES&&item.dbmSamples>0&&item.avgDbm!==null&&Number.isFinite(item.avgDbm)).sort((a,b)=>(b.avgDbm-a.avgDbm)||(b.dbmSamples-a.dbmSamples));
   return {totalSwitches,frequencies,stableFrequency:candidates.length?candidates[0].frequency:null,worstFrequency:candidates.length>1?candidates[candidates.length-1].frequency:null};
 }
 
@@ -2983,7 +2983,7 @@ function renderResults(data){
     const cells=freqs.map(freq=>{
       const item=vtxByFrequency.get(freq)||{switches:0,avgDbm:null,dbmSamples:0};
       const best=freq===vtxFlight.stableFrequency,worst=freq===vtxFlight.worstFrequency;
-      const dbmText=item.avgDbm===null?'dBm —':`AVG ${item.avgDbm.toFixed(1)} dBm`;
+      const dbmText=item.dbmSamples>0&&item.avgDbm!==null?`AVG ${item.avgDbm.toFixed(1)} dBm`:'dBm —';
       return `<div class="vtx-frequency-cell${best?' vtx-frequency-best':''}${worst?' vtx-frequency-worst':''}"><div class="vtx-frequency-main">${freq} — ${item.switches}</div><div class="vtx-frequency-dbm">${dbmText}</div></div>`;
     }).join('');
     return `<div class="vtx-frequency-band">${band}</div>${cells}`;

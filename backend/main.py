@@ -2783,6 +2783,12 @@ async def analyze(file: UploadFile = File(...)):
                         if bucket is not None:
                             bucket["sum"] += float(dbm_val)
                             bucket["samples"] += 1
+                    vtx_state = get_vtx_state(ch7_current, ch8_current)
+                    if vtx_state:
+                        bucket = vtx_dbm_stats.get(vtx_state.get("frequency"))
+                        if bucket is not None:
+                            bucket["sum"] += float(dbm_val)
+                            bucket["samples"] += 1
 
                 if dbm_val != 0 and (min_dbm == 0 or dbm_val < min_dbm):
                     min_dbm = dbm_val
