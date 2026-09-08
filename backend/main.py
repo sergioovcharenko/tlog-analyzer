@@ -1588,6 +1588,7 @@ async def analyze(file: UploadFile = File(...)):
         # -128 dBm is intentionally INCLUDED in the arithmetic mean.
         dbm_sum = 0.0
         dbm_sample_count = 0
+        vtx_dbm_stats = {freq: {"sum": 0.0, "samples": 0} for band in VTX_CHANNELS.values() for freq in band.values()}
         telem_rssi_raw = None
         telem_remrssi_raw = None
         radio_status_seen = False
@@ -2776,6 +2777,12 @@ async def analyze(file: UploadFile = File(...)):
                 if dbm_val != 0:
                     dbm_sum += float(dbm_val)
                     dbm_sample_count += 1
+                    vtx_state = get_vtx_state(ch7_current, ch8_current)
+                    if vtx_state:
+                        bucket = vtx_dbm_stats.get(vtx_state.get("frequency"))
+                        if bucket is not None:
+                            bucket["sum"] += float(dbm_val)
+                            bucket["samples"] += 1
 
                 if dbm_val != 0 and (min_dbm == 0 or dbm_val < min_dbm):
                     min_dbm = dbm_val
@@ -5259,6 +5266,7 @@ async def analyze(file: UploadFile = File(...)):
                 "band": curr_vtx_band,
                 "channel": curr_vtx_channel,
                 "changeCount": video_change_count,
+                "frequencyDbmStats": [{"frequency": freq, "samples": bucket["samples"], "avgDbm": round(bucket["sum"] / bucket["samples"], 1) if bucket["samples"] > 0 else None} for freq, bucket in sorted(vtx_dbm_stats.items())],
                 "uniqueCount": len(video_freq_seen),
                 "ch7Pwm": ch7_current,
                 "ch8Pwm": ch8_current,
