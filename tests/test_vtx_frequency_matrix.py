@@ -21,12 +21,13 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
     def test_backend_averages_every_radio_dbm_sample_by_active_vtx_frequency(self):
         self.assertIn("vtx_dbm_stats", BACKEND)
         self.assertIn("vtx_state = get_vtx_state(ch7_current, ch8_current)", BACKEND)
-        self.assertIn("bucket[\"sum\"] += float(dbm_val)", BACKEND)
-        self.assertIn("bucket[\"samples\"] += 1", BACKEND)
-        self.assertIn('"frequencyDbmStats": vtx_frequency_dbm_stats', BACKEND)
+        self.assertIn('bucket["sum"] += float(dbm_val)', BACKEND)
+        self.assertIn('bucket["samples"] += 1', BACKEND)
+        self.assertIn('"frequencyDbmStats": [', BACKEND)
+        self.assertIn('"avgDbm": round(bucket["sum"] / bucket["samples"], 1)', BACKEND)
 
     def test_minus_128_is_included_in_frequency_average(self):
-        self.assertIn("dbm_val != 0", BACKEND)
+        self.assertIn("if dbm_val != 0:", BACKEND)
         self.assertNotIn("dbm_val > -128", BACKEND)
         self.assertNotIn("dbm_val != -128", BACKEND)
 
