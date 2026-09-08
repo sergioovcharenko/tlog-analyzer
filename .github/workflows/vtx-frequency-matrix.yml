@@ -5,6 +5,7 @@ on:
     branches:
       - feature/vtx-frequency-matrix
       - fix/vtx-dbm-all-samples-v2
+      - fix/vtx-unused-dbm-empty
   pull_request:
 
 permissions:
@@ -42,5 +43,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html backend/main.py
-          git commit -m "fix: render VTX averages from all dBm samples"
+          git commit -m "fix: hide zero dBm for unused VTX frequencies"
           git push
