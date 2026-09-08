@@ -18,8 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply VTX matrix integration
-        run: python tools/apply_vtx_frequency_matrix.py
+      - name: Apply VTX dBm average integration
+        run: python tools/apply_vtx_dbm_average.py
       - name: Run VTX matrix contract
         run: python -m unittest tests/test_vtx_frequency_matrix.py -v
       - name: Check backend Python syntax
@@ -35,7 +35,7 @@ jobs:
               f.write('\n'.join(scripts)); path=f.name
           subprocess.run(['node','--check',path],check=True)
           PY
-      - name: Commit generated VTX matrix
+      - name: Commit generated VTX dBm integration
         if: github.event_name == 'push'
         run: |
           if git diff --quiet -- index.html backend/main.py; then exit 0; fi
