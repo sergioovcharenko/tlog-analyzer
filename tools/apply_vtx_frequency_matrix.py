@@ -57,7 +57,7 @@ if css_marker not in html:
         raise SystemExit("CSS anchor not found")
     html = html.replace(anchor, css + anchor, 1)
 
-old_helper = r'''function summarizeVtxFrequencySelections(timeline){
+legacy_helper = r'''function summarizeVtxFrequencySelections(timeline){
   const stats=new Map();
   let previous=null;
   let totalSwitches=0;
@@ -78,7 +78,7 @@ old_helper = r'''function summarizeVtxFrequencySelections(timeline){
   };
 }'''
 
-new_helper = r'''const VTX_STABLE_DBM_LIMIT=-85;
+current_helper = r'''const VTX_STABLE_DBM_LIMIT=-85;
 const VTX_MIN_STABILITY_SAMPLES=3;
 const VTX_FREQUENCY_MATRIX={'5.2':[5180,5240,5300],'5.5':[5520,5580,5640],'5.8':[5700,5765,5825]};
 
@@ -120,12 +120,65 @@ function summarizeVtxFrequencySelections(timeline){
   };
 }'''
 
-if old_helper in html:
-    html = html.replace(old_helper, new_helper, 1)
+new_helper = r'''const VTX_NORMAL_DBM_LIMIT=-85;
+const VTX_MIN_DBM=-128;
+const VTX_MIN_STABILITY_SAMPLES=3;
+const VTX_FREQUENCY_MATRIX={'5.2':[5180,5240,5300],'5.5':[5520,5580,5640],'5.8':[5700,5765,5825]};
+
+function summarizeVtxFrequencySelections(timeline){
+  const stats=new Map();
+  Object.values(VTX_FREQUENCY_MATRIX).flat().forEach(freq=>{
+    stats.set(freq,{frequency:freq,switches:0,totalDbmSamples:0,dropDbmSum:0,dropDbmSamples:0,avgDropDbm:null});
+  });
+  let previous=null;
+  let totalSwitches=0;
+  for(const row of (Array.isArray(timeline)?timeline:[])){
+    const freq=Number(row?.videoFreq);
+    if(!Number.isFinite(freq)||freq<=0)continue;
+    const f=Math.round(freq);
+    if(!stats.has(f))continue;
+    const item=stats.get(f);
+    if(previous!==null&&f!==previous){
+      item.switches+=1;
+      totalSwitches+=1;
+    }
+    previous=f;
+    const dbm=Number(row?.dbm);
+    if(Number.isFinite(dbm)&&dbm<=0&&dbm>=VTX_MIN_DBM){
+      item.totalDbmSamples+=1;
+      if(dbm<=VTX_NORMAL_DBM_LIMIT&&dbm>=VTX_MIN_DBM){
+        item.dropDbmSum+=dbm;
+        item.dropDbmSamples+=1;
+      }
+    }
+  }
+  const frequencies=[...stats.values()].map(item=>({
+    ...item,
+    avgDropDbm:item.dropDbmSamples?item.dropDbmSum/item.dropDbmSamples:null
+  }));
+  const stableCandidates=frequencies
+    .filter(item=>item.totalDbmSamples>=VTX_MIN_STABILITY_SAMPLES)
+    .sort((a,b)=>{
+      if(a.dropDbmSamples===0&&b.dropDbmSamples!==0)return -1;
+      if(b.dropDbmSamples===0&&a.dropDbmSamples!==0)return 1;
+      if(a.dropDbmSamples===0&&b.dropDbmSamples===0)return b.totalDbmSamples-a.totalDbmSamples;
+      return (b.avgDropDbm-a.avgDropDbm)||(a.dropDbmSamples-b.dropDbmSamples)||(b.totalDbmSamples-a.totalDbmSamples);
+    });
+  return {
+    totalSwitches,
+    frequencies,
+    stableFrequency:stableCandidates.length?stableCandidates[0].frequency:null
+  };
+}'''
+
+if legacy_helper in html:
+    html = html.replace(legacy_helper, new_helper, 1)
+elif current_helper in html:
+    html = html.replace(current_helper, new_helper, 1)
 elif new_helper not in html:
     raise SystemExit("VTX summary helper anchor not found")
 
-old_video = r'''  const video=data.video||{};
+legacy_video = r'''  const video=data.video||{};
   const vtxFlight=summarizeVtxFrequencySelections(data.timeline);
   document.getElementById('videoGrid').innerHTML=`
     ${createCard(
@@ -140,7 +193,7 @@ old_video = r'''  const video=data.video||{};
     ${createCard('Змін VTX',video.changeCount??vtxFlight.totalSwitches)}
   `;'''
 
-new_video = r'''  const video=data.video||{};
+current_video = r'''  const video=data.video||{};
   const vtxFlight=summarizeVtxFrequencySelections(data.timeline);
   const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[item.frequency,item]));
   const vtxMatrixHtml=Object.entries(VTX_FREQUENCY_MATRIX).map(([band,freqs])=>{
@@ -161,8 +214,33 @@ new_video = r'''  const video=data.video||{};
     ${createCard('Змін VTX',video.changeCount??vtxFlight.totalSwitches)}
   `;'''
 
-if old_video in html:
-    html = html.replace(old_video, new_video, 1)
+new_video = r'''  const video=data.video||{};
+  const vtxFlight=summarizeVtxFrequencySelections(data.timeline);
+  const vtxByFrequency=new Map(vtxFlight.frequencies.map(item=>[item.frequency,item]));
+  const vtxMatrixHtml=Object.entries(VTX_FREQUENCY_MATRIX).map(([band,freqs])=>{
+    const cells=freqs.map(freq=>{
+      const item=vtxByFrequency.get(freq)||{switches:0,avgDropDbm:null,dropDbmSamples:0,totalDbmSamples:0};
+      const best=freq===vtxFlight.stableFrequency;
+      const dbmText=item.totalDbmSamples===0
+        ?'dBm —'
+        :(item.dropDbmSamples===0?'НОРМА ≥ -85 dBm':`AVG ПРОСІДАННЯ ${item.avgDropDbm.toFixed(1)} dBm`);
+      return `<div class="vtx-frequency-cell${best?' vtx-frequency-best':''}"${best?' title="Найстабільніша VTX частота за просіданнями dBm"':''}><div class="vtx-frequency-main">${freq} — ${item.switches}</div><div class="vtx-frequency-dbm">${dbmText}</div></div>`;
+    }).join('');
+    return `<div class="vtx-frequency-band">${band}</div>${cells}`;
+  }).join('');
+  document.getElementById('videoGrid').innerHTML=`
+    <div class="vtx-matrix-card">
+      <div class="card-title">ВИКОРИСТАНІ VTX ЧАСТОТИ</div>
+      <div class="vtx-frequency-grid">${vtxMatrixHtml}</div>
+      <div class="card-desc">До -85 dBm — норма. AVG ПРОСІДАННЯ рахується тільки зі значень від -85 до -128 dBm включно; -128 входить у середнє.</div>
+    </div>
+    ${createCard('Змін VTX',video.changeCount??vtxFlight.totalSwitches)}
+  `;'''
+
+if legacy_video in html:
+    html = html.replace(legacy_video, new_video, 1)
+elif current_video in html:
+    html = html.replace(current_video, new_video, 1)
 elif new_video not in html:
     raise SystemExit("VTX render anchor not found")
 
