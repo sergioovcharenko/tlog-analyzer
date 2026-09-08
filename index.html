@@ -946,6 +946,10 @@ body{
 .attitude-radio-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 9px}
 .attitude-radio-card{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #28435d;border-radius:7px;padding:8px 10px;background:#08111b;font:800 12px monospace;box-shadow:inset 0 0 0 1px rgba(56,189,248,.04)}
 .attitude-radio-card b{font-size:10px;color:#7dd3fc;letter-spacing:.07em}.attitude-radio-card span{font-size:15px;color:#f8fafc}
+#attitudeDbm.attitude-dbm-good{color:#22c55e!important;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.55);border-radius:5px;padding:3px 7px}
+#attitudeDbm.attitude-dbm-warning{color:#f59e0b!important;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.55);border-radius:5px;padding:3px 7px}
+#attitudeDbm.attitude-dbm-danger{color:#ef4444!important;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.60);border-radius:5px;padding:3px 7px}
+
 .attitude-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;font:12px monospace}
 .attitude-value{min-width:0}.attitude-value b{white-space:normal}.attitude-value .att-main{display:block;font-size:15px;font-weight:900;color:#f8fafc}
 .attitude-value.att-fc .att-main{color:#38bdf8}.attitude-value.att-current .att-main{color:#fb7185}.attitude-value.att-engine .att-main{color:#facc15}
@@ -2486,6 +2490,15 @@ function attitudeFcTempClass(v){
   if(v>=80&&v<85)return 'att-fc-orange';
   return '';
 }
+function attitudeDbmClass(dbm){
+  if(dbm===null||dbm===undefined)return '';
+  const v=Number(dbm);
+  if(!Number.isFinite(v))return '';
+  if(v>=-85)return 'attitude-dbm-good';
+  if(v>=-99)return 'attitude-dbm-warning';
+  return 'attitude-dbm-danger';
+}
+
 function updateAttitudeAtTime(timeMs){
   const d=graphViewerState.result?.graph_data||{},times=d.attitude_time_ms||[],idx=nearestSampleIndex(times,timeMs);
   const values=document.getElementById('attitudeValues'),scene=document.getElementById('attitudeScene');
@@ -2496,7 +2509,12 @@ function updateAttitudeAtTime(timeMs){
   const modeAtTime=()=>{const tt=d.mode_time_ms||[],vv=d.flight_mode||[];if(!tt.length||!vv.length)return '—';let i=nearestSampleIndex(tt,timeMs);if(i<0)return '—';if(Number(tt[i])>timeMs&&i>0)i-=1;return String(vv[i]||'—');};
   const rssi=sample('rssi_time_ms','rssi_pct'),dbm=sample('radio_time_ms','radio_dbm');
   if(rssiEl)rssiEl.textContent=rssi===null?'—':`${Math.round(rssi)} %`;
-  if(dbmEl)dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+  if(dbmEl){
+    dbmEl.textContent=dbm===null?'—':`${Math.round(dbm)} dBm`;
+    dbmEl.classList.remove('attitude-dbm-good','attitude-dbm-warning','attitude-dbm-danger');
+    const dbmClass=attitudeDbmClass(dbm);
+    if(dbmClass)dbmEl.classList.add(dbmClass);
+  }
   if(modeEl)modeEl.textContent=modeAtTime();
   if(idx<0){
     if(values)values.innerHTML='<div class="attitude-value" style="grid-column:1/-1">Немає ATTITUDE у цьому TLOG</div>';
