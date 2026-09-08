@@ -13,6 +13,15 @@ class VtxFrequencyMatrixTest(unittest.TestCase):
         self.assertIn("'5.5':[5520,5580,5640]", INDEX)
         self.assertIn("'5.8':[5700,5765,5825]", INDEX)
 
+    def test_matrix_renders_bands_as_columns_and_k_channels_as_rows(self):
+        self.assertIn('class="vtx-frequency-header">5.2</div>', INDEX)
+        self.assertIn('class="vtx-frequency-header">5.5</div>', INDEX)
+        self.assertIn('class="vtx-frequency-header">5.8</div>', INDEX)
+        self.assertIn('class="vtx-frequency-row-label">K1</div>', INDEX)
+        self.assertIn('class="vtx-frequency-row-label">K2</div>', INDEX)
+        self.assertIn('class="vtx-frequency-row-label">K3</div>', INDEX)
+        self.assertIn("VTX_MATRIX_ROWS", INDEX)
+
     def test_backend_averages_all_raw_dbm_per_active_frequency(self):
         self.assertIn("vtx_dbm_stats", BACKEND)
         self.assertIn("vtx_state = get_vtx_state(ch7_current, ch8_current)", BACKEND)
