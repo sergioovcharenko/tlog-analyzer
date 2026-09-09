@@ -37,8 +37,41 @@ jobs:
         run: |
           python tools/apply_report_export.py
           python tools/finalize_report_export.py
-      - name: Run primary report contract
-        run: python -m unittest tests/test_report_export.py -v
+      - name: Contract controls exist
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_controls_exist -v
+      - name: Contract controls state
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_controls_follow_analysis_state -v
+      - name: Contract model helpers
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_model_and_safety_helpers_exist -v
+      - name: Contract runtime safety
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_does_not_serialize_sensitive_runtime_fields -v
+      - name: Contract report sections
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_standalone_html_builder_has_required_sections -v
+      - name: Contract VTX event reuse
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_reuses_processed_event_and_vtx_paths -v
+      - name: Contract VTX best worst
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_vtx_report_uses_existing_best_worst -v
+      - name: Contract chart helpers
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_chart_helpers_exist -v
+      - name: Contract engine load reuse
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_reuses_engine_load_summary -v
+      - name: Contract export actions
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_export_actions_exist -v
+      - name: Contract share errors
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_share_cancel_is_silent_and_errors_use_existing_ui -v
+      - name: Contract responsive CSS
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_css_is_responsive_and_disabled_state_is_visible -v
       - name: Run full report contract
         if: always()
         run: python -m unittest tests/test_report_export_full.py -v
