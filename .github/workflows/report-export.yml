@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/report-export
-      - fix/report-export-runtime-vtx
   pull_request:
 
 permissions:
@@ -32,16 +31,6 @@ jobs:
               "pre,rest=s.split(js_start,1)\n_,post=rest.split(js_end,1)",
               "pre,sep,rest=s.partition(js_start)\nif not sep: raise SystemExit('report JS start marker missing')\n_,sep,post=rest.partition(js_end)\nif not sep: raise SystemExit('report JS end marker missing')"
           )
-          p.write_text(s,encoding='utf-8')
-          PY
-      - name: Apply runtime VTX and report-button fix
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('tools/finalize_report_export.py')
-          s=p.read_text(encoding='utf-8')
-          s=s.replace('summarizeVtxFrequencySelectionsAllDbm(data?.timeline,v?.frequencyDbmStats)','summarizeVtxFrequencySelections(data?.timeline,v?.frequencyDbmStats)')
-          s=s.replace('.report-export{position:relative;display:inline-flex;justify-content:flex-end;margin:0 0 18px;float:right}', '.report-export{position:relative;display:inline-flex;justify-content:flex-end;margin:6px 10px 18px 0;float:right}')
           p.write_text(s,encoding='utf-8')
           PY
       - name: Apply report export implementation
@@ -108,5 +97,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html tools/finalize_report_export.py
-          git commit -m "fix: repair report export runtime VTX path"
+          git commit -m "feat: finalize report export"
           git push
