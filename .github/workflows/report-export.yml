@@ -17,6 +17,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Harden report finalizer marker splitting
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/finalize_report_export.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(
+              "pre,rest=s.split(css_start,1)\n_,post=rest.split(css_end,1)",
+              "pre,sep,rest=s.partition(css_start)\nif not sep: raise SystemExit('report CSS start marker missing')\n_,sep,post=rest.partition(css_end)\nif not sep: raise SystemExit('report CSS end marker missing')"
+          )
+          s=s.replace(
+              "pre,rest=s.split(js_start,1)\n_,post=rest.split(js_end,1)",
+              "pre,sep,rest=s.partition(js_start)\nif not sep: raise SystemExit('report JS start marker missing')\n_,sep,post=rest.partition(js_end)\nif not sep: raise SystemExit('report JS end marker missing')"
+          )
+          p.write_text(s,encoding='utf-8')
+          PY
       - name: Apply report export implementation
         run: |
           python tools/apply_report_export.py
@@ -39,9 +55,9 @@ jobs:
       - name: Commit generated report export
         if: github.event_name == 'push'
         run: |
-          if git diff --quiet -- index.html; then exit 0; fi
+          if git diff --quiet -- index.html tools/finalize_report_export.py; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
+          git add index.html tools/finalize_report_export.py
           git commit -m "feat: finalize report export"
           git push
