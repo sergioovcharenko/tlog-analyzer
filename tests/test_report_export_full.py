@@ -15,8 +15,10 @@ class ReportExportFullContract(unittest.TestCase):
             'function escapeReportHtml(value)',
             'function buildReportHtml(data,chartImages={})',
             'function buildReportChartImages(data)',
-            'function downloadReportHtml()',
-            'function openReportPrint()',
+            'async function getCurrentReportHtml()',
+            'async function createReportBlob()',
+            'async function downloadReportHtml()',
+            'async function openReportForPrint()',
             'async function shareReport()',
         ):
             self.assertIn(marker, HTML)
@@ -35,7 +37,7 @@ class ReportExportFullContract(unittest.TestCase):
         self.assertIn('navigator.share', HTML)
         self.assertIn('navigator.canShare', HTML)
         self.assertIn("new Blob([html],{type:'text/html;charset=utf-8'})", HTML)
-        self.assertIn("w.print()", HTML)
+        self.assertIn('printWindow.print()', HTML)
 
     def test_no_third_party_pdf_dependency(self):
         lowered=HTML.lower()
@@ -43,11 +45,12 @@ class ReportExportFullContract(unittest.TestCase):
             self.assertNotIn(forbidden, lowered)
 
     def test_vtx_matrix_order_is_preserved(self):
-        self.assertIn('[[5180,5520,5700],[5240,5580,5765],[5300,5640,5825]]', HTML)
+        for marker in ("'K1':[5180,5520,5700]", "'K2':[5240,5580,5765]", "'K3':[5300,5640,5825]"):
+            self.assertIn(marker, HTML)
 
-    def test_engine_load_not_recomputed_from_vfr_hud(self):
+    def test_engine_load_reuses_existing_timeline_summary(self):
         report_block=HTML.split('// REPORT_EXPORT_V1',1)[1].split('function getVoltageClass',1)[0]
-        self.assertIn('h.engineLoadAvg', report_block)
+        self.assertIn('summarizeEngineLoad(data?.timeline)', report_block)
         self.assertNotIn('VFR_HUD.throttle', report_block)
 
 
