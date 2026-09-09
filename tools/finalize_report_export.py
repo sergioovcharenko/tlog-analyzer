@@ -18,8 +18,10 @@ css='''/* REPORT_EXPORT_V1 */
 .report-menu button:hover{background:rgba(56,189,248,.10)}
 @media(max-width:760px){.report-menu{position:fixed;left:12px;right:12px;bottom:12px;top:auto;min-width:0}.report-export{float:none;width:100%;justify-content:flex-end}}
 '''
-pre,rest=s.split(css_start,1)
-_,post=rest.split(css_end,1)
+pre,sep,rest=s.partition(css_start)
+if not sep: raise SystemExit('report CSS start marker missing')
+_,sep,post=rest.partition(css_end)
+if not sep: raise SystemExit('report CSS end marker missing')
 s=pre+css+'\n'+css_end+post
 
 js_start='// REPORT_EXPORT_V1'
@@ -327,8 +329,10 @@ function wireReportExportControls(){
 }
 setTimeout(wireReportExportControls,0);
 '''
-pre,rest=s.split(js_start,1)
-_,post=rest.split(js_end,1)
+pre,sep,rest=s.partition(js_start)
+if not sep: raise SystemExit('report JS start marker missing')
+_,sep,post=rest.partition(js_end)
+if not sep: raise SystemExit('report JS end marker missing')
 s=pre+js+'\n'+js_end+post
 
 p.write_text(s,encoding='utf-8')
