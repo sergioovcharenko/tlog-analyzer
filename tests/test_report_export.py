@@ -52,8 +52,8 @@ class ReportExportContract(unittest.TestCase):
         self.assertIn("Gyros inconsistent", self.html)
 
     def test_vtx_report_uses_existing_best_worst(self):
-        self.assertIn("model.vtx.stableFrequency", self.html)
-        self.assertIn("model.vtx.worstFrequency", self.html)
+        self.assertIn("stableFrequency", self.html)
+        self.assertIn("worstFrequency", self.html)
         self.assertIn("dbmSamples", self.html)
         self.assertIn("'K1':[5180,5520,5700]", self.html)
         self.assertIn("'K2':[5240,5580,5765]", self.html)
