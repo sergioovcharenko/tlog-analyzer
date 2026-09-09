@@ -1,0 +1,32 @@
+name: Clean page title
+
+on:
+  push:
+    branches:
+      - fix/clean-page-title
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply clean browser title
+        run: python tools/apply_clean_page_title.py
+      - name: Test browser title
+        run: python -m unittest tests/test_page_title.py -v
+      - name: Commit generated title
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- index.html; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "ui: simplify browser page title"
+          git push
