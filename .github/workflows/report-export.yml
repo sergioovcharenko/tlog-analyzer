@@ -1,0 +1,98 @@
+name: Report export
+
+on:
+  push:
+    branches:
+      - feature/report-export
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Harden report finalizer marker splitting
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/finalize_report_export.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(
+              "pre,rest=s.split(css_start,1)\n_,post=rest.split(css_end,1)",
+              "pre,sep,rest=s.partition(css_start)\nif not sep: raise SystemExit('report CSS start marker missing')\n_,sep,post=rest.partition(css_end)\nif not sep: raise SystemExit('report CSS end marker missing')"
+          )
+          s=s.replace(
+              "pre,rest=s.split(js_start,1)\n_,post=rest.split(js_end,1)",
+              "pre,sep,rest=s.partition(js_start)\nif not sep: raise SystemExit('report JS start marker missing')\n_,sep,post=rest.partition(js_end)\nif not sep: raise SystemExit('report JS end marker missing')"
+          )
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Apply report export implementation
+        run: |
+          python tools/apply_report_export.py
+          python tools/finalize_report_export.py
+      - name: Contract controls exist
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_controls_exist -v
+      - name: Contract controls state
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_controls_follow_analysis_state -v
+      - name: Contract model helpers
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_model_and_safety_helpers_exist -v
+      - name: Contract runtime safety
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_does_not_serialize_sensitive_runtime_fields -v
+      - name: Contract report sections
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_standalone_html_builder_has_required_sections -v
+      - name: Contract VTX event reuse
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_reuses_processed_event_and_vtx_paths -v
+      - name: Contract VTX best worst
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_vtx_report_uses_existing_best_worst -v
+      - name: Contract chart helpers
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_chart_helpers_exist -v
+      - name: Contract engine load reuse
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_reuses_engine_load_summary -v
+      - name: Contract export actions
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_export_actions_exist -v
+      - name: Contract share errors
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_share_cancel_is_silent_and_errors_use_existing_ui -v
+      - name: Contract responsive CSS
+        if: always()
+        run: python -m unittest tests.test_report_export.ReportExportContract.test_report_css_is_responsive_and_disabled_state_is_visible -v
+      - name: Run full report contract
+        if: always()
+        run: python -m unittest tests/test_report_export_full.py -v
+      - name: Check inline JavaScript syntax
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write('\n'.join(scripts)); path=f.name
+          subprocess.run(['node','--check',path],check=True)
+          PY
+      - name: Commit generated report export
+        if: github.event_name == 'push' && success()
+        run: |
+          if git diff --quiet -- index.html tools/finalize_report_export.py; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html tools/finalize_report_export.py
+          git commit -m "feat: finalize report export"
+          git push
