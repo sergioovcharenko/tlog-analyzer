@@ -909,7 +909,7 @@ body{
 
 
 /* REPORT_EXPORT_V1 */
-.report-export{position:relative;display:inline-flex;justify-content:flex-end;margin:0 0 18px;float:right}
+.report-export{position:relative;display:inline-flex;justify-content:flex-end;margin:6px 10px 18px 0;float:right}
 #reportButton{height:40px;padding:0 16px;border:1px solid #38bdf8;border-radius:8px;background:#082f49;color:#e0f2fe;font-weight:900;cursor:pointer}
 #reportButton:disabled{opacity:.45;cursor:not-allowed}
 .report-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:9200;min-width:190px;padding:6px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-card);box-shadow:0 12px 30px rgba(0,0,0,.35)}
@@ -1601,7 +1601,7 @@ function buildReportModel(data){
   const ai=data?.ai||{};
   const reconstruction=data?.ai_reconstruction||data?.aiReconstruction||{};
   const esc=Array.isArray(h.esc)?h.esc:[];
-  const vtx=summarizeVtxFrequencySelectionsAllDbm(data?.timeline,v?.frequencyDbmStats);
+  const vtx=summarizeVtxFrequencySelections(data?.timeline,v?.frequencyDbmStats);
   const board=Array.isArray(data?.board_messages)?data.board_messages:(Array.isArray(data?.boardMessages)?data.boardMessages:[]);
   const engine=summarizeEngineLoad(data?.timeline);
   const graph=data?.graph_data||{};
