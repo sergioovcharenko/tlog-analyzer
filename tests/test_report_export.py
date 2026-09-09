@@ -45,7 +45,8 @@ class ReportExportContract(unittest.TestCase):
         self.assertIn("@media print", self.html)
 
     def test_report_reuses_processed_event_and_vtx_paths(self):
-        self.assertIn("summarizeVtxFrequencySelectionsAllDbm", self.html)
+        self.assertIn("summarizeVtxFrequencySelections(data?.timeline,v?.frequencyDbmStats)", self.html)
+        self.assertNotIn("summarizeVtxFrequencySelectionsAllDbm", self.html)
         self.assertIn("function reportBoardMessages(model)", self.html)
         self.assertIn("function reportVtxMatrix(model)", self.html)
         self.assertIn("function reportAiConclusion(model)", self.html)
