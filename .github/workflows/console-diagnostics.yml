@@ -6,6 +6,9 @@ on:
       - feature/console-diagnostics-kb
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,5 +17,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Apply console diagnostics integration
+        run: python tools/apply_console_diagnostics.py
       - name: Run console diagnostics tests
         run: python -m unittest tests/test_console_diagnostics.py -v
+      - name: Check AI reconstruction syntax
+        run: python -m py_compile backend/console_diagnostics.py backend/ai_reconstruction.py
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          html=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write('\n'.join(scripts)); path=f.name
+          subprocess.run(['node','--check',path],check=True)
+          PY
+      - name: Verify frontend integration contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          required=[
+            'function describeKnownConsoleDiagnostic(text)',
+            'knownConsoleDiagnosticText(item.systemText,item.analysisText)',
+            'describeKnownConsoleDiagnostic(raw)',
+            'Potential Thrust Loss',
+            'Yaw imbalance',
+            'EKF3 Yaw inconsistent',
+          ]
+          missing=[x for x in required if x not in s]
+          if missing: raise SystemExit('missing frontend diagnostics: '+repr(missing))
+          PY
+      - name: Commit generated integration
+        if: github.event_name == 'push' && success()
+        run: |
+          if git diff --quiet -- backend/ai_reconstruction.py index.html; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/ai_reconstruction.py index.html
+          git commit -m "feat: integrate console diagnostics knowledge"
+          git push
