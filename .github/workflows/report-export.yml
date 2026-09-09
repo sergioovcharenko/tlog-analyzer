@@ -37,7 +37,10 @@ jobs:
         run: |
           python tools/apply_report_export.py
           python tools/finalize_report_export.py
+      - name: Runtime VTX regression
+        run: python -m unittest tests/test_report_export_runtime_vtx.py -v
       - name: Contract controls exist
+        if: always()
         run: python -m unittest tests.test_report_export.ReportExportContract.test_report_controls_exist -v
       - name: Contract controls state
         if: always()
