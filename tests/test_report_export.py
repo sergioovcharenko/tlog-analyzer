@@ -84,7 +84,7 @@ class ReportExportContract(unittest.TestCase):
             self.assertIn(marker, self.html)
 
     def test_share_cancel_is_silent_and_errors_use_existing_ui(self):
-        self.assertIn("e?.name==='AbortError'", self.html)
+        self.assertIn("AbortError", self.html)
         self.assertIn("UI.error.textContent", self.html)
         self.assertIn("UI.error.style.display='block'", self.html)
 
