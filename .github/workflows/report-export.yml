@@ -37,11 +37,13 @@ jobs:
         run: |
           python tools/apply_report_export.py
           python tools/finalize_report_export.py
-      - name: Run report export contracts
-        run: |
-          python -m unittest tests/test_report_export.py -v
-          python -m unittest tests/test_report_export_full.py -v
+      - name: Run primary report contract
+        run: python -m unittest tests/test_report_export.py -v
+      - name: Run full report contract
+        if: always()
+        run: python -m unittest tests/test_report_export_full.py -v
       - name: Check inline JavaScript syntax
+        if: always()
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -53,7 +55,7 @@ jobs:
           subprocess.run(['node','--check',path],check=True)
           PY
       - name: Commit generated report export
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && success()
         run: |
           if git diff --quiet -- index.html tools/finalize_report_export.py; then exit 0; fi
           git config user.name "github-actions[bot]"
