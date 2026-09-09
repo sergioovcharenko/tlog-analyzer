@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+try:
+    from backend.console_diagnostics import describe_console_message
+except ImportError:
+    from console_diagnostics import describe_console_message
+
 STABLE_ALTITUDE_SPREAD_M = 5.0
 ALTITUDE_CLIMB_M = 8.0
 SHORT_RTL_LAND_S = 2.0
@@ -258,55 +263,75 @@ def build_ai_reconstruction(facts: dict[str, Any]) -> dict[str, Any]:
 
 
 def augment_ai_reconstruction_with_prearm_diagnostics(ai: dict[str, Any], timeline) -> dict[str, Any]:
-    """Add factual PreArm Gyros inconsistent diagnostics to the AI conclusion."""
+    """Add known console/PreArm diagnostics to the AI conclusion without inventing causality."""
     rows = [row for row in (timeline or []) if isinstance(row, dict)]
     gyro_rows = []
+    known = []
+    seen = set()
     for row in rows:
-        text = str(row.get("systemText") or row.get("system_text") or "")
+        text = str(row.get("systemText") or row.get("system_text") or "").strip()
+        if not text:
+            continue
         if "gyros inconsistent" in text.lower():
             gyro_rows.append(row)
+        diag = describe_console_message(text)
+        if diag:
+            signature = (diag.get("category"), diag.get("level"), diag.get("summary"))
+            if signature not in seen:
+                seen.add(signature)
+                known.append((row, diag))
 
-    if not gyro_rows:
+    if not gyro_rows and not known:
         return ai
 
     out = dict(ai or {})
     for key in ("what_happened", "likely_sequence", "pilot_actions", "possible_alternatives", "evidence"):
         out[key] = list(out.get(key) or [])
 
-    out["what_happened"].append(
-        'Перед ARM зафіксовано "PreArm: Gyros inconsistent" — автопілот виявив '
-        'розбіжність між показами гіроскопів/IMU.'
-    )
-    out["what_happened"].append(
-        'Gyros inconsistent означає, що покази гіроскопів не узгоджуються між собою. '
-        'Можливі причини: рух апарата під час ініціалізації, вібрації, різна температура IMU, '
-        'некоректне калібрування або несправність одного з IMU/гіроскопів.'
-    )
-
-    times = [str(row.get("time") or "").strip() for row in gyro_rows if str(row.get("time") or "").strip()]
-    if times:
-        out["evidence"].append(
-            f'Gyros inconsistent: {len(gyro_rows)} повідомлень; перше о {times[0]}.'
+    if gyro_rows:
+        out["what_happened"].append(
+            'Перед ARM зафіксовано "PreArm: Gyros inconsistent" — автопілот виявив '
+            'розбіжність між показами гіроскопів/IMU.'
         )
-    else:
-        out["evidence"].append(f'Gyros inconsistent: {len(gyro_rows)} повідомлень у TLOG.')
+        out["what_happened"].append(
+            'Gyros inconsistent означає, що покази гіроскопів не узгоджуються між собою. '
+            'Можливі причини: рух апарата під час ініціалізації, вібрації, різна температура IMU, '
+            'некоректне калібрування або несправність одного з IMU/гіроскопів.'
+        )
+        times = [str(row.get("time") or "").strip() for row in gyro_rows if str(row.get("time") or "").strip()]
+        out["evidence"].append(
+            f'Gyros inconsistent: {len(gyro_rows)} повідомлень' + (f'; перше о {times[0]}.' if times else ' у TLOG.')
+        )
+        arm_rows = [
+            row for row in rows
+            if row.get("eventType") == "FLIGHT_SESSION_START"
+            or "двигуни запущено" in str(row.get("systemText") or row.get("system_text") or "").lower()
+        ]
+        if arm_rows:
+            last_gyro_index = max(rows.index(row) for row in gyro_rows)
+            first_arm_index = min(rows.index(row) for row in arm_rows)
+            if last_gyro_index < first_arm_index:
+                out["evidence"].append(
+                    'Повідомлення Gyros inconsistent було до ARM; після ARM повторів у цьому TLOG не знайдено.'
+                )
+        out["possible_alternatives"].append(
+            'Перед наступним запуском залишити апарат нерухомим під час ініціалізації, перезапустити FC, '
+            'перевірити калібрування IMU та повторюваність помилки. Якщо Gyros inconsistent з’являється '
+            'регулярно — перевірити вібрації, живлення та стан IMU/гіроскопів.'
+        )
 
-    arm_rows = [
-        row for row in rows
-        if row.get("eventType") == "FLIGHT_SESSION_START"
-        or "двигуни запущено" in str(row.get("systemText") or row.get("system_text") or "").lower()
-    ]
-    if arm_rows:
-        last_gyro_index = max(rows.index(row) for row in gyro_rows)
-        first_arm_index = min(rows.index(row) for row in arm_rows)
-        if last_gyro_index < first_arm_index:
-            out["evidence"].append(
-                'Повідомлення Gyros inconsistent було до ARM; після ARM повторів у цьому TLOG не знайдено.'
-            )
+    for row, diag in known:
+        time_text = str(row.get("time") or "").strip()
+        prefix = f"{time_text} • " if time_text else ""
+        out["evidence"].append(
+            f"{prefix}{diag['category']} / {diag['level']}: {diag['summary']}"
+        )
+        if diag.get("level") in ("CRITICAL", "EMERGENCY"):
+            out["what_happened"].append(diag["summary"])
+        checks = diag.get("checks") or []
+        if checks:
+            check_text = "; ".join(checks[:3])
+            if check_text not in out["possible_alternatives"]:
+                out["possible_alternatives"].append(check_text)
 
-    out["possible_alternatives"].append(
-        'Перед наступним запуском залишити апарат нерухомим під час ініціалізації, перезапустити FC, '
-        'перевірити калібрування IMU та повторюваність помилки. Якщо Gyros inconsistent з’являється '
-        'регулярно — перевірити вібрації, живлення та стан IMU/гіроскопів.'
-    )
     return out
