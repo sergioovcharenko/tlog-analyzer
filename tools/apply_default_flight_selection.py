@@ -31,7 +31,13 @@ if 'function selectDefaultFlightIndex(flights)' not in text:
     text = text.replace(marker, helper + marker, 1)
 
 render_start = text.index('  function renderMap(data){')
-active_pos = text.index('    STATE.active=0;', render_start)
-text = text[:active_pos] + '    STATE.active=selectDefaultFlightIndex(STATE.flights);' + text[active_pos + len('    STATE.active=0;'):]
+old = '    STATE.active=0;'
+new = '    STATE.active=selectDefaultFlightIndex(STATE.flights);'
+render_tail = text[render_start:]
+if new not in render_tail:
+    if old not in render_tail:
+        raise SystemExit('renderMap active-flight assignment not found')
+    active_pos = text.index(old, render_start)
+    text = text[:active_pos] + new + text[active_pos + len(old):]
 
 path.write_text(text, encoding='utf-8')
