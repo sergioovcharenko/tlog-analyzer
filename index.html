@@ -5976,11 +5976,30 @@ function renderTimelineTable(items,containerId){
     }
   }
 
+
+  function selectDefaultFlightIndex(flights){
+    if(!Array.isArray(flights) || !flights.length) return 0;
+    var bestIndex=0;
+    var bestScore=-1;
+    var bestRows=-1;
+    flights.forEach(function(flight,index){
+      var points=Array.isArray(flight&&flight.points)?flight.points:[];
+      var rows=Array.isArray(flight&&flight.rows)?flight.rows:[];
+      var score=points.length;
+      if(score>bestScore || (score===bestScore && rows.length>bestRows)){
+        bestIndex=index;
+        bestScore=score;
+        bestRows=rows.length;
+      }
+    });
+    return bestIndex;
+  }
+
   function renderMap(data){
     STATE.data=data;
     STATE.flights=splitFlights(data);
     applyDrDistanceFallback(data, STATE.flights);
-    STATE.active=0;
+    STATE.active=selectDefaultFlightIndex(STATE.flights);
     STATE.zoom=1.0;
     STATE.panN=0.0;
     STATE.panE=0.0;
