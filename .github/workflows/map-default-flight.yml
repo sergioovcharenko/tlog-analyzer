@@ -1,0 +1,29 @@
+name: Map default flight
+
+on:
+  push:
+    branches:
+      - fix/map-default-main-flight
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run map default flight regression
+        run: python -m unittest tests/test_map_default_flight.py -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re, pathlib, subprocess, tempfile
+          html=pathlib.Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,re.S|re.I)
+          code='\n'.join(scripts)
+          with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8') as f:
+              f.write(code); name=f.name
+          subprocess.run(['node','--check',name],check=True)
+          PY
