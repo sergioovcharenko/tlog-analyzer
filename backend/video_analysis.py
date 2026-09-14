@@ -61,37 +61,32 @@ def _parse_rate(value):
         return 0.0
 
 
-def probe_video(path):
-    import json
-    import subprocess
+def _ffmpeg_executable():
+    import imageio_ffmpeg
 
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height,avg_frame_rate,r_frame_rate:format=duration",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    payload = json.loads(completed.stdout or "{}")
-    streams = payload.get("streams") or []
-    if not streams:
-        raise ValueError("Video stream not found")
-    stream = streams[0]
-    duration = float((payload.get("format") or {}).get("duration") or 0.0)
-    width = int(stream.get("width") or 0)
-    height = int(stream.get("height") or 0)
-    fps = _parse_rate(stream.get("avg_frame_rate")) or _parse_rate(stream.get("r_frame_rate"))
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def probe_video(path):
+    import imageio_ffmpeg
+
+    frames = imageio_ffmpeg.read_frames(str(path), pix_fmt="rgb24")
+    try:
+        metadata = next(frames)
+    except StopIteration as exc:
+        raise ValueError("Video stream not found") from exc
+    finally:
+        frames.close()
+
+    size = metadata.get("size") or metadata.get("source_size") or (0, 0)
+    try:
+        width = int(size[0])
+        height = int(size[1])
+    except (TypeError, ValueError, IndexError) as exc:
+        raise ValueError("Video metadata is incomplete") from exc
+
+    duration = float(metadata.get("duration") or 0.0)
+    fps = _parse_rate(metadata.get("fps"))
     if duration <= 0 or width <= 0 or height <= 0:
         raise ValueError("Video metadata is incomplete")
     return {"durationSec": duration, "width": width, "height": height, "fps": fps}
@@ -134,7 +129,7 @@ def extract_frame(path, time_sec, output_path):
     timestamp = max(0.0, float(time_sec))
     subprocess.run(
         [
-            "ffmpeg",
+            _ffmpeg_executable(),
             "-hide_banner",
             "-loglevel",
             "error",
