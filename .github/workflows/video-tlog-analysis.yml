@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/main.py'
       - 'backend/video_analysis.py'
+      - 'backend/requirements.txt'
       - 'index.html'
       - 'tests/test_video_analysis_core.py'
       - 'tests/test_video_analysis_api.py'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'backend/main.py'
       - 'backend/video_analysis.py'
+      - 'backend/requirements.txt'
       - 'index.html'
       - 'tests/test_video_analysis_core.py'
       - 'tests/test_video_analysis_api.py'
@@ -36,12 +38,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt pytest httpx
 
-      - name: Install FFmpeg tools
+      - name: Verify packaged FFmpeg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version
-          ffprobe -version
+          python - <<'PY'
+          import imageio_ffmpeg
+          import subprocess
+          exe = imageio_ffmpeg.get_ffmpeg_exe()
+          print(exe)
+          subprocess.run([exe, '-version'], check=True)
+          PY
 
       - name: Run video TLOG tests
         run: |
