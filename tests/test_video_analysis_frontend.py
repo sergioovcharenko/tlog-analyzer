@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 HTML = Path("index.html").read_text(encoding="utf-8")
@@ -29,8 +30,20 @@ def test_roi_editor_controls_and_labels_exist():
     assert 'id="videoAddRoi"' in HTML
     assert 'id="videoClearRois"' in HTML
     assert "Додати зону" in HTML
-    for label in ("Напруга", "dBm", "Режим", "Попередження", "Відеоканал", "Інше"):
-        assert label in HTML
+    match = re.search(r'<select id="videoRoiLabel"[^>]*>(.*?)</select>', HTML, re.S)
+    assert match, "video ROI label select not found"
+    options = re.findall(r'<option>(.*?)</option>', match.group(1), re.S)
+    assert options == [
+        "Напруга АКБ",
+        "Ампераж",
+        "dBm",
+        "RSSI",
+        "VISP",
+        "Режим",
+        "Попередження",
+        "Інше",
+    ]
+    assert "Відеоканал" not in options
 
 
 def test_roi_editor_converts_display_pixels_to_source_pixels():
