@@ -151,3 +151,87 @@ def extract_frame(path, time_sec, output_path):
         capture_output=True,
         timeout=30,
     )
+
+
+def build_observation(
+    video_time_sec,
+    mapped_tlog_sec,
+    roi,
+    kind,
+    description,
+    confidence,
+    extracted_text=None,
+):
+    roi = roi or {}
+    observation = {
+        "videoTimeSec": round(float(video_time_sec), 3),
+        "tlogTimeSec": round(float(mapped_tlog_sec), 3),
+        "roiId": str(roi.get("id") or "roi"),
+        "roiLabel": str(roi.get("label") or "Інше"),
+        "type": str(kind or "observation"),
+        "description": str(description or ""),
+        "confidence": max(0.0, min(1.0, float(confidence))),
+    }
+    if extracted_text is not None and str(extracted_text).strip():
+        observation["extractedText"] = str(extracted_text).strip()
+    return observation
+
+
+def correlate_observations(observations, tlog_events, max_delta_sec=2.0):
+    max_delta = max(0.0, float(max_delta_sec))
+    correlations = []
+
+    normalized_events = []
+    for event in tlog_events or []:
+        if not isinstance(event, dict):
+            continue
+        try:
+            event_time = float(event.get("timeSec"))
+        except (TypeError, ValueError):
+            continue
+        normalized_events.append((event_time, event))
+
+    for observation in observations or []:
+        if not isinstance(observation, dict):
+            continue
+        try:
+            observation_time = float(observation.get("tlogTimeSec"))
+        except (TypeError, ValueError):
+            continue
+
+        candidates = []
+        for event_time, event in normalized_events:
+            signed_delta = event_time - observation_time
+            absolute_delta = abs(signed_delta)
+            if absolute_delta <= max_delta:
+                candidates.append((absolute_delta, signed_delta, event))
+        if not candidates:
+            continue
+
+        absolute_delta, signed_delta, event = min(candidates, key=lambda item: item[0])
+        rounded_delta = round(absolute_delta, 3)
+        if rounded_delta == 0:
+            relation = "часово збігається"
+        elif signed_delta > 0:
+            relation = f"передувало TLOG-події на {rounded_delta:g} с; події часово близькі"
+        else:
+            relation = f"відбулося після TLOG-події на {rounded_delta:g} с; події часово близькі"
+
+        event_type = str(event.get("type") or "TLOG")
+        event_text = str(event.get("text") or "").strip()
+        video_description = str(observation.get("description") or "").strip()
+        summary = f"На відео: {video_description}. Це {relation} з {event_type}"
+        if event_text:
+            summary += f" ({event_text})"
+        summary += "."
+
+        correlations.append(
+            {
+                "tlogEvent": event,
+                "videoObservation": observation,
+                "deltaSec": rounded_delta,
+                "summary": summary,
+            }
+        )
+
+    return correlations

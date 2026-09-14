@@ -33,3 +33,30 @@ def test_dense_windows_do_not_create_unbounded_samples():
     times = build_sample_times(20.0, normal_fps=1.0, dense_windows=[(9.0, 11.0)])
     assert len(times) < 100
     assert any(9.0 < t < 10.0 for t in times)
+
+
+def test_correlation_uses_non_causal_wording():
+    from backend.video_analysis import build_observation, correlate_observations
+    obs = [
+        build_observation(
+            10.0,
+            810.0,
+            {"id": "v", "label": "Відеоканал"},
+            "video_degradation",
+            "Сильні артефакти",
+            0.9,
+        )
+    ]
+    events = [{"timeSec": 810.4, "type": "RADIO_LOSS", "text": "-128 dBm"}]
+    out = correlate_observations(obs, events, max_delta_sec=2.0)
+    assert len(out) == 1
+    assert out[0]["deltaSec"] == 0.4
+    assert "часово" in out[0]["summary"].lower()
+    assert "причин" not in out[0]["summary"].lower()
+
+
+def test_correlation_ignores_events_outside_window():
+    from backend.video_analysis import build_observation, correlate_observations
+    obs = [build_observation(10.0, 810.0, {"id": "v", "label": "Відеоканал"}, "video_degradation", "Артефакти", 0.8)]
+    events = [{"timeSec": 814.0, "type": "RADIO_LOSS", "text": "-128 dBm"}]
+    assert correlate_observations(obs, events, max_delta_sec=2.0) == []
