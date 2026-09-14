@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 import re
 import statistics
 import subprocess
+import tempfile
 
 
 def map_video_to_tlog_time(video_time_sec, video_anchor_sec, tlog_anchor_sec):
@@ -292,6 +294,89 @@ def select_session_for_samples(samples, candidates, tolerance_sec=2.0, dominance
     if second <= 0 or longest >= second * dominance_ratio:
         return {"status": "selected", "selected": plausible[0], "candidates": plausible, "dominanceSelected": True}
     return {"status": "ambiguous", "selected": None, "candidates": plausible, "dominanceSelected": False}
+
+
+def run_flight_time_auto_sync(video_path, metadata, roi, flight_sessions, ocr_reader=read_flight_time_text):
+    normalized_roi = validate_roi(roi, int(metadata["width"]), int(metadata["height"]))
+    samples = []
+    warnings = []
+    with tempfile.TemporaryDirectory(prefix="flight-time-ocr-") as temp_dir:
+        for index, video_sec in enumerate(build_auto_sync_sample_times(metadata["durationSec"])):
+            crop_path = Path(temp_dir) / f"flight_time_{index}.png"
+            try:
+                extract_frame_crop(video_path, video_sec, normalized_roi, crop_path)
+                reading = ocr_reader(crop_path)
+            except Exception as exc:
+                warnings.append(f"OCR {video_sec:.1f} с: {exc}")
+                continue
+            if reading.get("flightTimeSec") is None:
+                continue
+            samples.append({
+                "videoSec": round(float(video_sec), 3),
+                "flightTimeSec": float(reading["flightTimeSec"]),
+                "ocrText": str(reading.get("text") or ""),
+                "ocrConfidence": round(float(reading.get("confidence") or 0.0), 3),
+            })
+
+    validation = validate_flight_time_samples(samples)
+    if not validation["valid"]:
+        return {
+            "status": "failed", "confidence": "low", "selectedFlight": None,
+            "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+            "tlogAnchorSec": None, "samples": validation["samples"],
+            "offsetSpreadSec": validation["offsetSpreadSec"], "candidates": [],
+            "warnings": warnings + ["Не вдалося стабільно прочитати Flight Time"],
+        }
+
+    selection = select_session_for_samples(
+        validation["samples"], build_session_candidates(flight_sessions)
+    )
+    flight_minus_video = float(validation["flightMinusVideoSec"])
+    candidate_payloads = []
+    for candidate in selection["candidates"]:
+        item = dict(candidate)
+        item["offsetSec"] = round(float(item["armTlogSec"]) + flight_minus_video, 3)
+        candidate_payloads.append(item)
+
+    if selection["status"] == "failed":
+        return {
+            "status": "failed", "confidence": "low", "selectedFlight": None,
+            "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+            "tlogAnchorSec": None, "samples": validation["samples"],
+            "offsetSpreadSec": validation["offsetSpreadSec"], "candidates": [],
+            "warnings": warnings + ["Flight Time не поміщається в жодну ARM-сесію TLOG"],
+        }
+    if selection["status"] == "ambiguous":
+        return {
+            "status": "ambiguous", "confidence": "low", "selectedFlight": None,
+            "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+            "tlogAnchorSec": None, "samples": validation["samples"],
+            "offsetSpreadSec": validation["offsetSpreadSec"],
+            "candidates": candidate_payloads,
+            "warnings": warnings + ["Кілька ARM-сесій правдоподібні — потрібен вибір користувача"],
+        }
+
+    selected = selection["selected"]
+    offset_sec = round(float(selected["armTlogSec"]) + flight_minus_video, 3)
+    confidence = validation["confidence"]
+    if selection["dominanceSelected"] and confidence == "high":
+        confidence = "medium"
+    mapped_samples = []
+    for sample in validation["samples"]:
+        item = dict(sample)
+        item["mappedTlogSec"] = round(
+            float(selected["armTlogSec"]) + float(sample["flightTimeSec"]), 3
+        )
+        mapped_samples.append(item)
+    return {
+        "status": "success", "confidence": confidence,
+        "selectedFlight": int(selected["number"]),
+        "armTlogSec": round(float(selected["armTlogSec"]), 3),
+        "offsetSec": offset_sec, "videoAnchorSec": 0.0,
+        "tlogAnchorSec": offset_sec, "samples": mapped_samples,
+        "offsetSpreadSec": validation["offsetSpreadSec"],
+        "candidates": candidate_payloads, "warnings": warnings,
+    }
 
 
 def extract_frame(path, time_sec, output_path):
