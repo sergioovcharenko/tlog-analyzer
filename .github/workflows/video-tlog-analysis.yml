@@ -2,7 +2,7 @@ name: Video TLOG analysis CI
 
 on:
   push:
-    branches: [feature/video-tlog-analysis]
+    branches: [feature/video-tlog-analysis, feature/flight-time-auto-sync]
     paths:
       - 'backend/main.py'
       - 'backend/video_analysis.py'
@@ -11,6 +11,7 @@ on:
       - 'tests/test_video_analysis_core.py'
       - 'tests/test_video_analysis_api.py'
       - 'tests/test_video_analysis_frontend.py'
+      - 'tests/test_flight_time_auto_sync.py'
       - '.github/workflows/video-tlog-analysis.yml'
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - 'tests/test_video_analysis_core.py'
       - 'tests/test_video_analysis_api.py'
       - 'tests/test_video_analysis_frontend.py'
+      - 'tests/test_flight_time_auto_sync.py'
       - '.github/workflows/video-tlog-analysis.yml'
 
 jobs:
@@ -54,6 +56,7 @@ jobs:
             tests/test_video_analysis_core.py \
             tests/test_video_analysis_api.py \
             tests/test_video_analysis_frontend.py \
+            tests/test_flight_time_auto_sync.py \
             -v
 
       - name: Run high-value existing regressions
