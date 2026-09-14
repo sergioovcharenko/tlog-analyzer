@@ -1,0 +1,78 @@
+name: Apply video Render hotfix
+
+on:
+  push:
+    branches: [fix/video-render-import]
+    paths:
+      - '.github/workflows/hotfix-video-render.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest httpx
+
+      - name: Apply minimal production fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('backend/main.py')
+          main = main_path.read_text(encoding='utf-8')
+          old_import = '    from backend.video_analysis import build_sample_times, normalize_rois, probe_video\n'
+          new_import = (
+              '    try:\n'
+              '        from backend.video_analysis import build_sample_times, normalize_rois, probe_video\n'
+              '    except ImportError:\n'
+              '        from video_analysis import build_sample_times, normalize_rois, probe_video\n'
+          )
+          if old_import not in main:
+              raise SystemExit('video_analysis import anchor not found')
+          main_path.write_text(main.replace(old_import, new_import, 1), encoding='utf-8')
+
+          html_path = Path('index.html')
+          html = html_path.read_text(encoding='utf-8')
+          old_options = '''          <option>Напруга</option>\n          <option>dBm</option>\n          <option>Режим</option>\n          <option>Попередження</option>\n          <option>Відеоканал</option>\n          <option>Інше</option>'''
+          new_options = '''          <option>Напруга АКБ</option>\n          <option>Ампераж</option>\n          <option>dBm</option>\n          <option>RSSI</option>\n          <option>VISP</option>\n          <option>Режим</option>\n          <option>Попередження</option>\n          <option>Інше</option>'''
+          if old_options not in html:
+              raise SystemExit('ROI option block not found')
+          html_path.write_text(html.replace(old_options, new_options, 1), encoding='utf-8')
+          PY
+
+      - name: Verify hotfix tests
+        run: |
+          python -m pytest \
+            tests/test_video_analysis_core.py \
+            tests/test_video_analysis_api.py \
+            tests/test_video_analysis_frontend.py \
+            -v
+          python -m py_compile backend/main.py backend/video_analysis.py
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('index.html').read_text(encoding='utf-8')
+          a = s.rfind('<script>')
+          b = s.find('</script>', a)
+          Path('/tmp/tlog-app.js').write_text(s[a+8:b], encoding='utf-8')
+          PY
+          node --check /tmp/tlog-app.js
+
+      - name: Commit hotfix and remove one-shot workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/main.py index.html
+          git rm .github/workflows/hotfix-video-render.yml
+          git commit -m 'fix: support Render video endpoint and ROI labels'
+          git push
