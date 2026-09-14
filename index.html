@@ -1353,6 +1353,23 @@ html,body{max-width:100%;overflow-x:hidden}
 .land-vspeed-inline{display:block!important;margin:0!important;font-size:10px!important;line-height:1.05!important;color:#7dd3fc!important;font-weight:800!important;white-space:nowrap}
 </style>
 
+<style>
+/* VIDEO_TLOG_FRONTEND_V1 */
+.video-assist-card{margin-top:18px;padding:16px 18px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-card)}
+.video-assist-toggle{display:flex;align-items:center;gap:10px;font-weight:800;cursor:pointer}
+.video-assist-toggle input{width:18px;height:18px;accent-color:var(--accent)}
+#videoUploadPanel{margin-top:14px;padding-top:14px;border-top:1px solid var(--border-color)}
+#videoUploadPanel[hidden]{display:none!important}
+.video-assist-file-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.video-assist-file-btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 12px;border:1px solid #3b82f6;border-radius:7px;background:rgba(59,130,246,.1);color:#93c5fd;font-weight:800;cursor:pointer}
+#videoFileInput{display:none}
+#videoSelectedName{color:var(--text-muted);font-size:12px;overflow-wrap:anywhere}
+.video-preview-shell{margin-top:12px;max-width:780px;background:#05080d;border:1px solid var(--border-color);border-radius:8px;overflow:hidden}
+#videoPreview{display:block;width:100%;max-height:440px;background:#000}
+#videoPreview:not([src]){display:none}
+#videoAssistStatus{margin-top:10px;color:var(--text-muted);font-size:12px;line-height:1.45}
+</style>
+
 </head>
 <body>
 <!-- GLOBAL_THEME_SWITCH_FIX_V1 -->
@@ -1384,6 +1401,26 @@ html,body{max-width:100%;overflow-x:hidden}
   <div class="file-box" id="fileBox">
     <div class="file-name" id="fileName"></div>
     <div class="file-size" id="fileSize"></div>
+  </div>
+
+
+  <!-- VIDEO_TLOG_FRONTEND_V1 -->
+  <div class="video-assist-card" id="videoAssistCard">
+    <label class="video-assist-toggle" for="videoFlightEnabled">
+      <input id="videoFlightEnabled" type="checkbox">
+      <span>🎥 Є відео польоту</span>
+    </label>
+    <div id="videoUploadPanel" hidden>
+      <div class="video-assist-file-row">
+        <label class="video-assist-file-btn" for="videoFileInput">📹 ОБРАТИ MP4 / MOV</label>
+        <input id="videoFileInput" type="file" accept="video/mp4,video/quicktime,.mp4,.mov">
+        <span id="videoSelectedName">Відео не вибрано</span>
+      </div>
+      <div class="video-preview-shell">
+        <video id="videoPreview" controls preload="metadata" playsinline></video>
+      </div>
+      <div id="videoAssistStatus">Відео буде оброблятися тільки після увімкнення режиму та синхронізації з TLOG.</div>
+    </div>
   </div>
 
   <button class="analyze" id="analyzeButton" disabled>⏳ АНАЛІЗ...</button>
@@ -1543,6 +1580,85 @@ const UI={
   results:document.getElementById('results')
 };
 
+
+
+// VIDEO_TLOG_FRONTEND_V1
+let videoEnabled=false;
+let videoFile=null;
+let videoPreviewUrl=null;
+let videoRois=[];
+let videoAnchorSec=null;
+let tlogAnchorSec=null;
+
+const VideoUI={
+  enabled:document.getElementById('videoFlightEnabled'),
+  panel:document.getElementById('videoUploadPanel'),
+  input:document.getElementById('videoFileInput'),
+  preview:document.getElementById('videoPreview'),
+  name:document.getElementById('videoSelectedName'),
+  status:document.getElementById('videoAssistStatus')
+};
+
+function revokeVideoPreviewUrl(){
+  if(videoPreviewUrl){
+    URL.revokeObjectURL(videoPreviewUrl);
+    videoPreviewUrl=null;
+  }
+}
+
+function clearVideoFileState(){
+  revokeVideoPreviewUrl();
+  videoFile=null;
+  videoRois=[];
+  videoAnchorSec=null;
+  tlogAnchorSec=null;
+  if(VideoUI.input)VideoUI.input.value='';
+  if(VideoUI.preview){
+    VideoUI.preview.removeAttribute('src');
+    try{VideoUI.preview.load();}catch(_){ }
+  }
+  if(VideoUI.name)VideoUI.name.textContent='Відео не вибрано';
+  if(VideoUI.status)VideoUI.status.textContent='Відео буде оброблятися тільки після увімкнення режиму та синхронізації з TLOG.';
+}
+
+function resetVideoAssistState(){
+  clearVideoFileState();
+  videoEnabled=false;
+  if(VideoUI.enabled)VideoUI.enabled.checked=false;
+  if(VideoUI.panel)VideoUI.panel.hidden=true;
+}
+
+VideoUI.enabled?.addEventListener('change',()=>{
+  videoEnabled=!!VideoUI.enabled.checked;
+  if(VideoUI.panel)VideoUI.panel.hidden=!videoEnabled;
+  if(!videoEnabled)clearVideoFileState();
+});
+
+VideoUI.input?.addEventListener('change',event=>{
+  const file=event.target.files?.[0]||null;
+  if(!file){clearVideoFileState();return;}
+  const name=String(file.name||'');
+  if(!/\.(mp4|mov)$/i.test(name)){
+    clearVideoFileState();
+    UI.error.textContent='❌ Для відео потрібен файл MP4 або MOV';
+    UI.error.style.display='block';
+    return;
+  }
+  revokeVideoPreviewUrl();
+  videoFile=file;
+  videoRois=[];
+  videoAnchorSec=null;
+  tlogAnchorSec=null;
+  videoPreviewUrl=URL.createObjectURL(videoFile);
+  if(VideoUI.preview)VideoUI.preview.src=videoPreviewUrl;
+  if(VideoUI.name)VideoUI.name.textContent=`${name} • ${formatBytes(file.size)}`;
+  if(VideoUI.status)VideoUI.status.textContent='Відео вибрано. Спочатку виконай TLOG-аналіз, потім синхронізуй час.';
+  UI.error.style.display='none';
+});
+
+function canRunVideoAssistedAnalysis(){
+  return videoEnabled && !!videoFile && Number.isFinite(videoAnchorSec) && Number.isFinite(tlogAnchorSec);
+}
 
 // REPORT_EXPORT_V1
 function closeReportMenu(){
@@ -1961,6 +2077,7 @@ UI.resetBtn.addEventListener('click',()=>{
 });
 
 function resetForm(){
+  resetVideoAssistState();
   closeGraphViewer();
   const graphBtn=document.getElementById('graphViewerBtn');
   if(graphBtn)graphBtn.hidden=true;
@@ -2028,6 +2145,11 @@ function prefetchDynamicMavlinkPlot(result){
 
 UI.btn.addEventListener('click',async()=>{
   if(!selectedFile)return;
+  if(videoEnabled&&!videoFile){
+    UI.error.textContent='❌ Обери MP4 або MOV для відеоаналізу';
+    UI.error.style.display='block';
+    return;
+  }
   UI.btn.disabled=true;
   UI.btn.className='analyze';
   UI.btn.textContent='РОЗШИФРОВКА TLOG...';
@@ -2065,8 +2187,16 @@ async function analyzeOnServer(file){
   try{
     const formData=new FormData();
     formData.append('file',file,file.name);
+    const useVideoAssist=canRunVideoAssistedAnalysis();
+    if(useVideoAssist){
+      formData.append('video',videoFile,videoFile.name);
+      formData.append('video_anchor_sec',String(videoAnchorSec));
+      formData.append('tlog_anchor_sec',String(tlogAnchorSec));
+      formData.append('rois_json',JSON.stringify(videoRois));
+    }
+    const analyzeEndpoint=useVideoAssist?'/analyze-video':'/analyze';
 
-    const response=await fetch(API_BASE_URL+'/analyze',{
+    const response=await fetch(API_BASE_URL+analyzeEndpoint,{
       method:'POST',
       body:formData,
       signal:controller.signal
