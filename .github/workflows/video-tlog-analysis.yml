@@ -12,6 +12,7 @@ on:
       - 'tests/test_video_analysis_api.py'
       - 'tests/test_video_analysis_frontend.py'
       - 'tests/test_flight_time_auto_sync.py'
+      - 'tools/validate_flight_time_auto_sync.py'
       - '.github/workflows/video-tlog-analysis.yml'
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - 'tests/test_video_analysis_api.py'
       - 'tests/test_video_analysis_frontend.py'
       - 'tests/test_flight_time_auto_sync.py'
+      - 'tools/validate_flight_time_auto_sync.py'
       - '.github/workflows/video-tlog-analysis.yml'
 
 jobs:
@@ -77,7 +79,7 @@ jobs:
             -v
 
       - name: Python syntax check
-        run: python -m py_compile backend/main.py backend/video_analysis.py
+        run: python -m py_compile backend/main.py backend/video_analysis.py tools/validate_flight_time_auto_sync.py
 
       - name: Embedded JavaScript syntax check
         run: |
