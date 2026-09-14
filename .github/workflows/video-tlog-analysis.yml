@@ -1,0 +1,66 @@
+name: Video TLOG analysis CI
+
+on:
+  push:
+    branches: [feature/video-tlog-analysis]
+    paths:
+      - 'backend/main.py'
+      - 'backend/video_analysis.py'
+      - 'index.html'
+      - 'tests/test_video_analysis_core.py'
+      - 'tests/test_video_analysis_api.py'
+      - 'tests/test_video_analysis_frontend.py'
+      - '.github/workflows/video-tlog-analysis.yml'
+  pull_request:
+    paths:
+      - 'backend/main.py'
+      - 'backend/video_analysis.py'
+      - 'index.html'
+      - 'tests/test_video_analysis_core.py'
+      - 'tests/test_video_analysis_api.py'
+      - 'tests/test_video_analysis_frontend.py'
+      - '.github/workflows/video-tlog-analysis.yml'
+
+jobs:
+  video-tlog-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest httpx
+
+      - name: Verify FFmpeg tools
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Run video TLOG tests
+        run: |
+          python -m pytest \
+            tests/test_video_analysis_core.py \
+            tests/test_video_analysis_api.py \
+            tests/test_video_analysis_frontend.py \
+            -v
+
+      - name: Python syntax check
+        run: python -m py_compile backend/main.py backend/video_analysis.py
+
+      - name: Embedded JavaScript syntax check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('index.html').read_text(encoding='utf-8')
+          a = s.rfind('<script>')
+          b = s.find('</script>', a)
+          if a < 0 or b < 0:
+              raise SystemExit('embedded script not found')
+          Path('/tmp/tlog-analyzer-app.js').write_text(s[a+8:b], encoding='utf-8')
+          PY
+          node --check /tmp/tlog-analyzer-app.js
