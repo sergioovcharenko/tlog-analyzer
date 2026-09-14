@@ -5,6 +5,7 @@ on:
     branches: [feature/video-tlog-analysis]
     paths:
       - 'tools/apply_video_tlog_frontend.py'
+      - 'tests/test_video_analysis_frontend.py'
       - '.github/workflows/apply-video-tlog-frontend.yml'
 
 permissions:
