@@ -5,7 +5,7 @@ Branch: `feature/flight-time-auto-sync`
 
 ## Goal
 
-Automatically synchronize an uploaded flight video with the correct TLOG timeline by reading the OSD `Flight Time` value from several video frames and anchoring that value to the ARM time of the most likely flight session in the TLOG.
+Automatically synchronize an uploaded flight video with the correct TLOG timeline by reading the OSD `Flight Time` value from several video frames and anchoring that value to the ARM time of the matching flight session in the TLOG.
 
 The user should no longer need to manually pick a video time and then click a matching TLOG row in the common case. Manual synchronization remains available as a fallback.
 
@@ -25,20 +25,20 @@ The current `/analyze-video` endpoint does not yet OCR the OSD or automatically 
 
 ## User Experience
 
-The video section gains a new action: `⚡ Автосинхронізація по Flight Time`.
+The video section gains a new ROI label `Flight Time` and a new action: `⚡ Автосинхронізація по Flight Time`.
 
-The intended flow is:
+The v1 flow is:
 
 1. User uploads TLOG and video.
 2. Standard TLOG analysis identifies flight sessions.
-3. User either draws a `Flight Time` ROI or allows the analyzer to use a default/remembered OSD area when available.
+3. User draws one `Flight Time` ROI over the OSD timer.
 4. User clicks auto-sync.
-5. The backend samples several frames across the video and OCRs only the `Flight Time` ROI.
-6. The backend validates that the recognized values increase at approximately the same rate as video playback time.
-7. The analyzer selects the primary TLOG flight session, preferring the longest valid ARMED session.
+5. The backend samples several frames across the video and OCRs only that ROI.
+6. The backend validates that recognized values increase at approximately the same rate as video playback time.
+7. The analyzer checks which TLOG flight session can physically contain those Flight Time values.
 8. It computes the synchronization offset and returns a confidence score plus evidence.
 9. If confidence is high enough, the UI applies the anchor automatically.
-10. If confidence is insufficient, the UI explains why and leaves manual synchronization available.
+10. If confidence is insufficient or multiple sessions remain plausible, the UI explains why and leaves manual synchronization available.
 
 The UI should show a concise result such as:
 
@@ -46,13 +46,15 @@ The UI should show a concise result such as:
 
 It should also show `Автосинхронізація: висока / середня / низька впевненість`.
 
+Automatic detection of the Flight Time screen position is explicitly out of scope for v1; the user supplies the ROI.
+
 ## Synchronization Model
 
 For one OCR observation:
 
 - `video_sec` = media player time for the sampled frame;
 - `flight_time_sec` = OSD Flight Time parsed from that frame;
-- `arm_tlog_sec` = ARM time for the selected TLOG session.
+- `arm_tlog_sec` = ARM time for a candidate TLOG session.
 
 The corresponding TLOG time is:
 
@@ -64,10 +66,10 @@ The implied video-to-TLOG offset is:
 
 Across multiple valid OCR samples, the system calculates a robust central offset using the median rather than a simple mean.
 
-The final automatic anchor may be represented as:
+The final automatic anchor is represented as:
 
-- `video_anchor_sec = 0` and `tlog_anchor_sec = median_offset_sec`, or
-- an equivalent pair using one validated sample.
+- `video_anchor_sec = 0`;
+- `tlog_anchor_sec = median_offset_sec`.
 
 The existing mapping function remains unchanged:
 
@@ -75,16 +77,23 @@ The existing mapping function remains unchanged:
 
 ## Flight Session Selection
 
-The default selection rule is:
+OCR timing consistency alone cannot distinguish different ARM sessions: adding a different ARM timestamp shifts all derived offsets by the same constant. Therefore session selection must use session bounds, not offset spread.
 
-1. consider only valid ARMED sessions;
-2. prefer sessions with meaningful duration;
-3. select the longest session as the primary candidate;
-4. if two or more sessions are close enough to be plausible, evaluate each candidate against the OCR-derived offset consistency;
-5. choose the candidate with the lowest residual timing error;
-6. if ambiguity remains above the confidence threshold, return multiple candidates and require user confirmation.
+For each valid ARMED session:
 
-This avoids blindly assuming that the first ARM in a TLOG is the actual flight.
+1. compute `mapped_tlog_sec = ARM + Flight Time` for every valid OCR sample;
+2. if the session has DISARM, require mapped samples to stay inside `ARM ... DISARM` with a small timing tolerance;
+3. if the TLOG ends while still ARMED, use the end of available TLOG data as the upper bound;
+4. reject any session whose duration is shorter than the observed Flight Time values;
+5. reject a session when mapped samples fall outside its bounds.
+
+Selection rules:
+
+- if exactly one session remains plausible, select it;
+- if several sessions remain plausible, prefer the longest session only when it is clearly dominant;
+- if the top candidates are similarly plausible, return them and require user confirmation rather than silently guessing.
+
+For the provided sample, the earlier ~10-second sessions are rejected immediately because an OSD Flight Time around `00:04:45` cannot fit inside them, while the long fourth ARMED session can.
 
 ## OCR Scope
 
@@ -96,38 +105,55 @@ Why:
 - fewer false positives;
 - faster processing;
 - no need to understand unrelated OSD text;
-- easier validation against the expected `HH:MM:SS` or `MM:SS` structure.
+- easier validation against the expected time structure.
 
 The OCR parser accepts:
 
 - `HH:MM:SS`;
 - `MM:SS`;
-- common OCR substitutions where confidence is still recoverable, such as `O/0`, `I/1`, or missing separators when the pattern is otherwise unambiguous.
+- common OCR substitutions where the parse remains unambiguous, including `O→0`, `I/l→1`, and separators confused with punctuation.
 
 The parser must reject values that cannot be interpreted safely.
 
+## OCR Engine
+
+V1 uses **RapidOCR with ONNX Runtime** (`rapidocr_onnxruntime`) on the backend.
+
+Reasons:
+
+- no cloud API or API key;
+- no separate system `tesseract` binary;
+- deployable with Python dependencies on Render;
+- suitable for small cropped text regions;
+- OCR implementation can remain isolated behind a helper function.
+
+The OCR layer must be wrapped behind a function such as `read_flight_time_text(image_path_or_array)` so it can be replaced later without changing the synchronization logic or API contract.
+
+Unit tests for synchronization must not depend on OCR model accuracy; OCR outputs are injected/mocked there. A real-sample validation test separately exercises the OCR pipeline.
+
 ## Sampling Strategy
 
-The backend should not OCR every frame.
+The backend does not OCR every frame.
 
-Recommended first version:
+V1 strategy:
 
-- sample 7–10 frames across the usable video span;
-- avoid only sampling the first/last second;
-- if the video is short, reduce sample count while keeping at least 3 samples where possible;
-- extract the frame with the existing packaged FFmpeg path;
-- crop to the Flight Time ROI;
+- sample 7 frames spread across the usable video span;
+- avoid sampling only the first/last second;
+- for clips too short for 7 useful samples, use at least 3 when possible;
+- extract frames through the existing packaged FFmpeg path;
+- crop each frame to the Flight Time ROI;
+- optionally upscale and increase contrast before OCR;
 - run OCR only on the crop.
 
 After parsing, validate that for samples `i` and `j`:
 
 `(flight_time_j - flight_time_i)` is approximately equal to `(video_time_j - video_time_i)`.
 
-A tolerance of roughly ±1–2 seconds is acceptable for the initial version because OSD updates and frame extraction may not land exactly on a whole-second transition.
+A tolerance of ±2 seconds is accepted in v1 because OSD updates and extracted frames may straddle whole-second transitions.
 
 ## Confidence Model
 
-Confidence should be based on several signals rather than one OCR result.
+Confidence is based on multiple signals.
 
 Positive signals:
 
@@ -135,23 +161,25 @@ Positive signals:
 - monotonic Flight Time values;
 - slope close to 1.0 second per second;
 - low spread of computed offsets;
-- one TLOG flight candidate clearly better than the others.
+- exactly one TLOG session satisfying the session-bound checks.
 
 Negative signals:
 
 - too few recognized values;
 - non-monotonic time;
 - large offset variance;
-- multiple equally plausible ARM sessions;
+- multiple plausible flight sessions;
 - Flight Time reset inside the clip.
 
-Suggested categories:
+V1 categories:
 
-- High: enough valid samples and offset spread ≤ 1.0 s;
-- Medium: enough samples but spread > 1.0 s and ≤ 2.0 s;
-- Low: insufficient consistency; do not apply automatically.
+- **High**: at least 4 valid samples, exactly one plausible TLOG session, and offset spread ≤ 1.0 s;
+- **Medium**: at least 3 valid samples, one plausible session, and offset spread > 1.0 s but ≤ 2.0 s;
+- **Low**: fewer than 3 valid samples, multiple plausible sessions, non-monotonic Flight Time, or spread > 2.0 s.
 
-The exact thresholds may be adjusted from real flight data, but the backend must return the measured residuals so the decision remains inspectable.
+Only High and Medium results may auto-populate anchors. Low confidence leaves manual synchronization active and does not silently change anchors.
+
+The backend returns measured residual/spread values so the decision is inspectable.
 
 ## Backend Components
 
@@ -160,31 +188,48 @@ The exact thresholds may be adjusted from real flight data, but the backend must
 Add focused helpers for:
 
 - cropping an extracted frame to an ROI;
+- preprocessing the crop for OCR;
+- running RapidOCR on the crop;
 - parsing Flight Time text;
 - validating a sequence of OCR observations;
 - computing robust offsets;
-- ranking TLOG flight session candidates;
+- validating candidate TLOG session bounds;
+- selecting a session or returning ambiguity;
 - returning an auto-sync result with confidence and evidence.
 
-The existing generic video helpers should remain reusable and should not be overloaded with TLOG parsing logic beyond the synchronization helpers.
+The generic time-mapping and ROI validation helpers remain reusable.
 
 ### TLOG session data
 
-The existing TLOG analyzer already derives flight sessions for the UI. Auto-sync should reuse that source of truth rather than parse ARM/DISARM a second independent way if practical.
+Auto-sync reuses the existing flight-session source of truth rather than introducing a second ARM/DISARM parser.
 
-The backend needs, for each candidate session:
+For each candidate session it needs:
 
 - session number;
 - ARM timeline time;
 - DISARM timeline time when present;
 - duration;
-- whether the session ends while still armed.
+- whether the session ends while still armed;
+- end-of-log timeline time for an unfinished ARMED session.
 
 ### `/analyze-video`
 
-Keep current behavior compatible.
+Keep the current endpoint and preserve manual behavior.
 
-Extend the result with an optional structure such as:
+Change the request contract in a backward-compatible way:
+
+- `video_anchor_sec`: optional instead of required;
+- `tlog_anchor_sec`: optional instead of required;
+- add `auto_sync: bool = false`;
+- add `flight_time_roi_json`, optional unless `auto_sync=true`.
+
+Behavior:
+
+- existing manual requests with both anchors continue to work unchanged;
+- when `auto_sync=true`, the backend runs TLOG analysis, OCR synchronization, and returns derived anchors;
+- if auto-sync fails, the endpoint still returns the normal TLOG result with `videoAnalysis.autoSync.status = "failed"` and warnings.
+
+The result includes:
 
 ```json
 {
@@ -195,63 +240,51 @@ Extend the result with an optional structure such as:
       "selectedFlight": 4,
       "armTlogSec": 185.397,
       "offsetSec": 470.397,
-      "videoAnchorSec": 20.0,
-      "tlogAnchorSec": 490.397,
+      "videoAnchorSec": 0.0,
+      "tlogAnchorSec": 470.397,
       "samples": [
         {
           "videoSec": 20.0,
           "flightTimeSec": 305.0,
           "ocrText": "00:05:05",
-          "confidence": 0.96
+          "ocrConfidence": 0.96
         }
       ],
-      "residualSec": 0.42,
+      "offsetSpreadSec": 0.42,
       "warnings": []
     }
   }
 }
 ```
 
-If auto-sync fails, standard TLOG results must still be returned.
-
-## OCR Engine Choice
-
-The first implementation should use a lightweight backend OCR dependency that can run on Render without requiring a separate external service.
-
-Selection criteria:
-
-- deployable from Python requirements or bundled runtime;
-- works on cropped OSD digits;
-- acceptable CPU time for 7–10 crops;
-- no cloud API key required;
-- deterministic enough for regression tests.
-
-If the chosen OCR package proves unreliable for this specific OSD, the parser/crop pipeline should remain isolated so the OCR implementation can be replaced without changing the synchronization API.
+If several sessions remain plausible, `status` becomes `ambiguous` and the response includes the candidate session numbers instead of auto-applying anchors.
 
 ## Frontend Changes
 
-The existing video panel should add:
+The existing video panel adds:
 
 - ROI label `Flight Time`;
 - button `⚡ Автосинхронізація по Flight Time`;
 - progress/status text while OCR runs;
 - result line containing detected Flight Time, selected flight, calculated TLOG time, and offset;
 - confidence badge;
-- fallback button/section for manual synchronization.
+- ambiguous-candidate selector when required;
+- existing manual synchronization remains visible as fallback.
 
-The automatic result should populate the same anchor state already used by manual synchronization so downstream code does not need two separate time-mapping systems.
+A successful automatic result populates the exact same `video_anchor_sec` / `tlog_anchor_sec` state used by manual synchronization so downstream mapping has only one source of truth.
 
 ## Error Handling
 
-Auto-sync must fail safely.
+Auto-sync fails safely.
 
 Cases:
 
-- No Flight Time ROI: prompt the user to draw one.
-- OCR cannot read enough samples: show `Не вдалося стабільно прочитати Flight Time`.
-- Flight Time does not progress consistently: do not auto-apply.
-- Multiple TLOG flights remain plausible: show candidates for confirmation.
-- Video clip contains a Flight Time reset: split observations into monotonic segments or fail to manual sync in v1.
+- no Flight Time ROI: prompt the user to draw one;
+- OCR cannot read enough samples: show `Не вдалося стабільно прочитати Flight Time`;
+- Flight Time does not progress consistently: do not auto-apply;
+- no TLOG flight can contain the recognized Flight Time: explain that OSD timing does not match any session;
+- multiple TLOG flights remain plausible: show candidates for confirmation;
+- video clip contains a Flight Time reset: fail to manual synchronization in v1;
 - OCR dependency unavailable in production: preserve normal TLOG analysis and return a video auto-sync warning.
 
 No auto-sync failure may break ordinary TLOG analysis.
@@ -260,10 +293,10 @@ No auto-sync failure may break ordinary TLOG analysis.
 
 - Process only MP4/MOV already accepted by the endpoint.
 - Reuse existing temporary-file cleanup.
-- OCR only cropped frames, not the full video stream.
-- Cap sample count.
+- OCR only 3–7 cropped frames, never the whole video stream.
 - Keep FFmpeg process timeouts.
 - Reject invalid or out-of-frame ROI coordinates through existing ROI validation.
+- Keep OCR execution bounded to one request and return an ordinary warning if it fails.
 
 ## Testing Strategy
 
@@ -274,22 +307,24 @@ Implementation follows TDD.
 Add tests for:
 
 - parsing `00:05:05` and `05:05`;
-- common digit OCR substitutions;
+- common OCR digit substitutions;
 - invalid time strings;
 - monotonic validation;
 - median offset calculation;
-- selecting the longest TLOG flight;
-- candidate ranking when multiple sessions exist;
+- rejecting a 10-second session when Flight Time is ~285 seconds;
+- selecting the long fourth flight when it is the only session whose bounds fit;
+- ambiguity when multiple long sessions can contain the samples;
 - low confidence when offset spread is too large.
 
 ### Integration tests
 
 Add tests for:
 
-- `/analyze-video` returning `videoAnalysis.autoSync`;
+- `/analyze-video` accepting auto-sync without manual anchors;
+- manual `/analyze-video` requests remaining backward compatible;
+- `videoAnalysis.autoSync` success and failure responses;
 - Render-style imports from `rootDir: backend`;
-- auto-sync failure preserving TLOG result;
-- manual sync remaining available.
+- auto-sync failure preserving the ordinary TLOG result.
 
 ### Frontend contract tests
 
@@ -298,8 +333,9 @@ Add tests for:
 - `Flight Time` ROI label;
 - auto-sync button;
 - confidence/result fields;
-- auto-sync result populating existing manual anchor variables;
-- no regression to ordinary TLOG upload.
+- ambiguous candidate UI;
+- successful auto-sync populating existing anchor variables;
+- no regression to ordinary TLOG upload or manual video sync.
 
 ### Real sample validation
 
@@ -310,10 +346,11 @@ Use the provided pair:
 
 Expected behavior for this sample:
 
-- OCR should observe Flight Time values increasing from approximately `00:04:45` to `00:05:59` over the clip;
-- the analyzer should prefer the long fourth ARMED session rather than one of the earlier ~10-second sessions;
-- computed offsets from multiple samples should be approximately constant;
-- if they are not, auto-sync must refuse to claim high confidence.
+- OCR should observe Flight Time increasing from approximately `00:04:45` to `00:05:59` over the clip;
+- the earlier ~10-second TLOG sessions should be rejected as impossible;
+- the long fourth ARMED session should remain plausible and be selected;
+- offsets from multiple OCR samples should be approximately constant;
+- if OCR observations do not satisfy those checks, the feature must refuse to claim High/Medium confidence.
 
 The real sample is validation data, not a hard-coded special case.
 
@@ -321,6 +358,7 @@ The real sample is validation data, not a hard-coded special case.
 
 This feature does not yet attempt to:
 
+- automatically locate the Flight Time ROI on screen;
 - OCR voltage, current, RSSI, VISP, dBm, mode, or warnings;
 - analyze visual vibration, image loss, obstacles, or horizon;
 - infer causal relationships between video and TLOG events;
@@ -336,8 +374,9 @@ The feature is complete when:
 1. TLOG + video can be uploaded as today.
 2. `Flight Time` ROI can be selected.
 3. Auto-sync reads multiple OSD timestamps from the video.
-4. The primary/longest TLOG flight is selected by default, with ambiguity handling.
-5. A stable offset is calculated and applied to the existing video↔TLOG mapping state.
-6. The user sees the selected flight, calculated offset, confidence, and evidence.
-7. Low-confidence cases fall back to manual sync instead of silently applying a bad offset.
-8. Existing TLOG-only analysis and manual video sync remain unchanged and tested.
+4. Impossible TLOG sessions are eliminated by session-bound checks.
+5. The matching session is selected, or ambiguity is surfaced instead of guessed.
+6. A stable offset is calculated and applied to the existing video↔TLOG mapping state.
+7. The user sees the selected flight, calculated offset, confidence, and evidence.
+8. Low-confidence cases fall back to manual sync instead of silently applying a bad offset.
+9. Existing TLOG-only analysis and manual video sync remain unchanged and tested.
