@@ -20,3 +20,16 @@ def test_normalize_rois_rejects_zero_or_outside_rect_without_failing_all():
     valid, warnings = normalize_rois(rois, 1920, 1080)
     assert [r["id"] for r in valid] == ["ok"]
     assert warnings
+
+
+def test_sample_times_support_short_partial_clip():
+    from backend.video_analysis import build_sample_times
+    times = build_sample_times(5.0, normal_fps=1.0)
+    assert times == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+def test_dense_windows_do_not_create_unbounded_samples():
+    from backend.video_analysis import build_sample_times
+    times = build_sample_times(20.0, normal_fps=1.0, dense_windows=[(9.0, 11.0)])
+    assert len(times) < 100
+    assert any(9.0 < t < 10.0 for t in times)

@@ -44,3 +44,110 @@ def normalize_rois(rois, frame_width, frame_height):
             roi_id = roi.get("id") if isinstance(roi, dict) else None
             warnings.append(f"ROI {roi_id or index + 1}: {exc}")
     return valid, warnings
+
+
+def _parse_rate(value):
+    text = str(value or "0").strip()
+    if "/" in text:
+        numerator, denominator = text.split("/", 1)
+        try:
+            denominator_value = float(denominator)
+            return float(numerator) / denominator_value if denominator_value else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def probe_video(path):
+    import json
+    import subprocess
+
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height,avg_frame_rate,r_frame_rate:format=duration",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    payload = json.loads(completed.stdout or "{}")
+    streams = payload.get("streams") or []
+    if not streams:
+        raise ValueError("Video stream not found")
+    stream = streams[0]
+    duration = float((payload.get("format") or {}).get("duration") or 0.0)
+    width = int(stream.get("width") or 0)
+    height = int(stream.get("height") or 0)
+    fps = _parse_rate(stream.get("avg_frame_rate")) or _parse_rate(stream.get("r_frame_rate"))
+    if duration <= 0 or width <= 0 or height <= 0:
+        raise ValueError("Video metadata is incomplete")
+    return {"durationSec": duration, "width": width, "height": height, "fps": fps}
+
+
+def build_sample_times(duration_sec, normal_fps=1.0, dense_windows=None):
+    duration = max(0.0, float(duration_sec))
+    normal_fps = float(normal_fps)
+    if normal_fps <= 0:
+        raise ValueError("normal_fps must be positive")
+
+    times = set()
+    normal_step = 1.0 / normal_fps
+    t = 0.0
+    while t < duration:
+        times.add(round(t, 6))
+        t += normal_step
+    times.add(round(duration, 6))
+
+    dense_step = 0.25
+    for window in dense_windows or []:
+        if not isinstance(window, (tuple, list)) or len(window) != 2:
+            continue
+        start = max(0.0, min(duration, float(window[0])))
+        end = max(0.0, min(duration, float(window[1])))
+        if end < start:
+            start, end = end, start
+        t = start
+        while t < end:
+            times.add(round(t, 6))
+            t += dense_step
+        times.add(round(end, 6))
+
+    return sorted(times)
+
+
+def extract_frame(path, time_sec, output_path):
+    import subprocess
+
+    timestamp = max(0.0, float(time_sec))
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{timestamp:.6f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-y",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
