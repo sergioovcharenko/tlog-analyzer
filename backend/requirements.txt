@@ -3,3 +3,4 @@ uvicorn[standard]
 python-multipart
 pymavlink
 imageio-ffmpeg==0.6.0
+rapidocr-onnxruntime
