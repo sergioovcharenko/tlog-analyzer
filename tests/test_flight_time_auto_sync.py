@@ -92,3 +92,53 @@ def test_similar_long_sessions_are_ambiguous():
     )
     assert result["status"] == "ambiguous"
     assert [item["number"] for item in result["candidates"]] == [1, 2]
+
+
+def test_run_auto_sync_returns_anchor_pair(monkeypatch):
+    monkeypatch.setattr(va, "extract_frame_crop", lambda *args, **kwargs: None)
+    values = iter([285, 297, 309, 321, 333, 345, 357])
+
+    def fake_ocr(_path):
+        value = next(values)
+        return {"text": str(value), "flightTimeSec": value, "confidence": 0.96}
+
+    sessions = [
+        {"number": 1, "armTimestamp": 1000.0, "duration": 10.0, "endedArmed": False},
+        {"number": 4, "armTimestamp": 1185.397, "duration": 647.4, "endedArmed": True},
+    ]
+    result = va.run_flight_time_auto_sync(
+        "flight.mp4",
+        {"durationSec": 74.0, "width": 848, "height": 530, "fps": 30.0},
+        {"id": "ft", "label": "Flight Time", "x": 390, "y": 438, "width": 110, "height": 37},
+        sessions,
+        ocr_reader=fake_ocr,
+    )
+    assert result["status"] == "success"
+    assert result["selectedFlight"] == 4
+    assert result["videoAnchorSec"] == 0.0
+    assert result["tlogAnchorSec"] == result["offsetSec"]
+
+
+def test_run_auto_sync_ambiguous_never_sets_anchors(monkeypatch):
+    monkeypatch.setattr(va, "extract_frame_crop", lambda *args, **kwargs: None)
+    values = iter([100, 112, 124, 136, 148, 160, 172])
+
+    def fake_ocr(_path):
+        value = next(values)
+        return {"text": str(value), "flightTimeSec": value, "confidence": 0.9}
+
+    sessions = [
+        {"number": 1, "armTimestamp": 1000.0, "duration": 400.0, "endedArmed": False},
+        {"number": 2, "armTimestamp": 1500.0, "duration": 380.0, "endedArmed": False},
+    ]
+    result = va.run_flight_time_auto_sync(
+        "flight.mp4",
+        {"durationSec": 74.0, "width": 848, "height": 530, "fps": 30.0},
+        {"id": "ft", "label": "Flight Time", "x": 390, "y": 438, "width": 110, "height": 37},
+        sessions,
+        ocr_reader=fake_ocr,
+    )
+    assert result["status"] == "ambiguous"
+    assert result["confidence"] == "low"
+    assert result["videoAnchorSec"] is None
+    assert result["tlogAnchorSec"] is None
