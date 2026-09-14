@@ -51,6 +51,23 @@ jobs:
             tests/test_video_analysis_frontend.py \
             -v
 
+      - name: Run high-value existing regressions
+        run: |
+          python -m pytest \
+            tests/test_report_export.py \
+            tests/test_report_export_full.py \
+            tests/test_report_export_runtime_vtx.py \
+            tests/test_ai_reconstruction.py \
+            tests/test_ai_reconstruction_frontend_contract.py \
+            tests/test_ai_reconstruction_integration.py \
+            tests/test_vtx_frequency_matrix.py \
+            tests/test_board_messages_complete_list.py \
+            tests/test_graph_board_statustext_clickable.py \
+            tests/test_statustext_severity_passthrough.py \
+            tests/test_map_default_flight.py \
+            tests/test_frontend_flow.py \
+            -v
+
       - name: Python syntax check
         run: python -m py_compile backend/main.py backend/video_analysis.py
 
