@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from functools import lru_cache
+import re
+import subprocess
+
 
 def map_video_to_tlog_time(video_time_sec, video_anchor_sec, tlog_anchor_sec):
     return float(tlog_anchor_sec) + (float(video_time_sec) - float(video_anchor_sec))
@@ -67,6 +71,105 @@ def _ffmpeg_executable():
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
+_TIME_HMS_RE = re.compile(r"(?<!\d)(\d{1,2})\s*:\s*(\d{2})\s*:\s*(\d{2})(?!\d)")
+_TIME_MS_RE = re.compile(r"(?<!\d)(\d{1,3})\s*:\s*(\d{2})(?!\d)")
+
+
+def _normalize_ocr_time_text(text):
+    value = str(text or "").upper()
+    value = value.replace("O", "0")
+    value = value.replace("I", "1").replace("L", "1").replace("|", "1")
+    value = re.sub(r"[.;,]", ":", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def parse_flight_time_text(text):
+    value = _normalize_ocr_time_text(text)
+    match = _TIME_HMS_RE.search(value)
+    if match:
+        hours, minutes, seconds = (int(part) for part in match.groups())
+        if minutes >= 60 or seconds >= 60:
+            return None
+        return hours * 3600 + minutes * 60 + seconds
+    match = _TIME_MS_RE.search(value)
+    if match:
+        minutes, seconds = (int(part) for part in match.groups())
+        if seconds >= 60:
+            return None
+        return minutes * 60 + seconds
+    return None
+
+
+@lru_cache(maxsize=1)
+def _get_ocr_engine():
+    from rapidocr_onnxruntime import RapidOCR
+
+    return RapidOCR()
+
+
+def read_flight_time_text(image_path):
+    rows, _elapsed = _get_ocr_engine()(str(image_path))
+    rows = rows or []
+    tokens = []
+    scores = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 3:
+            continue
+        text = str(row[1] or "").strip()
+        if not text:
+            continue
+        tokens.append(text)
+        try:
+            scores.append(float(row[2]))
+        except (TypeError, ValueError):
+            scores.append(0.0)
+
+    joined = " ".join(tokens)
+    parsed = parse_flight_time_text(joined)
+    confidence = min(scores) if parsed is not None and scores else 0.0
+    if parsed is None:
+        for text, score in zip(tokens, scores):
+            parsed = parse_flight_time_text(text)
+            if parsed is not None:
+                joined = text
+                confidence = score
+                break
+    return {
+        "text": joined,
+        "flightTimeSec": parsed,
+        "confidence": max(0.0, min(1.0, float(confidence))),
+    }
+
+
+def extract_frame_crop(path, time_sec, roi, output_path):
+    timestamp = max(0.0, float(time_sec))
+    x = int(round(float(roi["x"])))
+    y = int(round(float(roi["y"])))
+    width = max(1, int(round(float(roi["width"]))))
+    height = max(1, int(round(float(roi["height"]))))
+    subprocess.run(
+        [
+            _ffmpeg_executable(),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{timestamp:.6f}",
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-vf",
+            f"crop={width}:{height}:{x}:{y},scale=iw*3:ih*3:flags=lanczos,format=gray",
+            "-y",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+
 def probe_video(path):
     import imageio_ffmpeg
 
@@ -124,8 +227,6 @@ def build_sample_times(duration_sec, normal_fps=1.0, dense_windows=None):
 
 
 def extract_frame(path, time_sec, output_path):
-    import subprocess
-
     timestamp = max(0.0, float(time_sec))
     subprocess.run(
         [
