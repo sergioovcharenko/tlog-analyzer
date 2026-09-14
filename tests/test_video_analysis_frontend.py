@@ -21,3 +21,22 @@ def test_tlog_only_and_video_assisted_paths_are_both_present():
     assert "videoEnabled" in HTML
     assert "videoFile" in HTML
     assert "formData.append('video'" in HTML or 'formData.append("video"' in HTML
+
+
+def test_roi_editor_controls_and_labels_exist():
+    assert 'id="videoRoiOverlay"' in HTML
+    assert 'id="videoRoiLabel"' in HTML
+    assert 'id="videoAddRoi"' in HTML
+    assert 'id="videoClearRois"' in HTML
+    assert "Додати зону" in HTML
+    for label in ("Напруга", "dBm", "Режим", "Попередження", "Відеоканал", "Інше"):
+        assert label in HTML
+
+
+def test_roi_editor_converts_display_pixels_to_source_pixels():
+    assert "video.videoWidth" in HTML or "VideoUI.preview.videoWidth" in HTML
+    assert "video.videoHeight" in HTML or "VideoUI.preview.videoHeight" in HTML
+    assert "displayRectToSourceRoi" in HTML
+    assert "pointerdown" in HTML
+    assert "pointermove" in HTML
+    assert "pointerup" in HTML
