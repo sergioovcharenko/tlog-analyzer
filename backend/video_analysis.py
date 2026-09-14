@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import re
+import statistics
 import subprocess
 
 
@@ -149,20 +150,10 @@ def extract_frame_crop(path, time_sec, roi, output_path):
     height = max(1, int(round(float(roi["height"]))))
     subprocess.run(
         [
-            _ffmpeg_executable(),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            f"{timestamp:.6f}",
-            "-i",
-            str(path),
-            "-frames:v",
-            "1",
-            "-vf",
-            f"crop={width}:{height}:{x}:{y},scale=iw*3:ih*3:flags=lanczos,format=gray",
-            "-y",
-            str(output_path),
+            _ffmpeg_executable(), "-hide_banner", "-loglevel", "error",
+            "-ss", f"{timestamp:.6f}", "-i", str(path), "-frames:v", "1",
+            "-vf", f"crop={width}:{height}:{x}:{y},scale=iw*3:ih*3:flags=lanczos,format=gray",
+            "-y", str(output_path),
         ],
         check=True,
         capture_output=True,
@@ -224,6 +215,83 @@ def build_sample_times(duration_sec, normal_fps=1.0, dense_windows=None):
         times.add(round(end, 6))
 
     return sorted(times)
+
+
+def build_auto_sync_sample_times(duration_sec):
+    duration = max(0.0, float(duration_sec))
+    if duration <= 0:
+        return []
+    count = 7 if duration >= 6.0 else 3
+    start = min(1.0, duration * 0.10)
+    end = max(start, duration - min(1.0, duration * 0.10))
+    return [round(start + (end - start) * i / (count - 1), 3) for i in range(count)]
+
+
+def validate_flight_time_samples(samples, tolerance_sec=2.0):
+    items = [dict(item) for item in samples if item.get("flightTimeSec") is not None]
+    items.sort(key=lambda item: float(item["videoSec"]))
+    if len(items) < 3:
+        return {"valid": False, "confidence": "low", "samples": items,
+                "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                "reason": "not_enough_samples"}
+    for previous, current in zip(items, items[1:]):
+        video_delta = float(current["videoSec"]) - float(previous["videoSec"])
+        flight_delta = float(current["flightTimeSec"]) - float(previous["flightTimeSec"])
+        if flight_delta < 0:
+            return {"valid": False, "confidence": "low", "samples": items,
+                    "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                    "reason": "flight_time_reset"}
+        if abs(flight_delta - video_delta) > float(tolerance_sec):
+            return {"valid": False, "confidence": "low", "samples": items,
+                    "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                    "reason": "clock_drift"}
+    offsets = [float(item["flightTimeSec"]) - float(item["videoSec"]) for item in items]
+    median_offset = float(statistics.median(offsets))
+    spread = max(abs(value - median_offset) for value in offsets)
+    if spread > 2.0:
+        confidence, valid, reason = "low", False, "offset_spread"
+    elif len(items) >= 4 and spread <= 1.0:
+        confidence, valid, reason = "high", True, None
+    else:
+        confidence, valid, reason = "medium", True, None
+    return {"valid": valid, "confidence": confidence, "samples": items,
+            "flightMinusVideoSec": round(median_offset, 3),
+            "offsetSpreadSec": round(spread, 3), "reason": reason}
+
+
+def build_session_candidates(flight_sessions):
+    sessions = [item for item in (flight_sessions or []) if isinstance(item, dict)]
+    if not sessions:
+        return []
+    base_arm = float(sessions[0]["armTimestamp"])
+    return [
+        {
+            "number": int(session.get("number") or index + 1),
+            "armTlogSec": round(float(session["armTimestamp"]) - base_arm, 3),
+            "durationSec": round(max(0.0, float(session.get("duration") or 0.0)), 3),
+            "endedArmed": bool(session.get("endedArmed")),
+        }
+        for index, session in enumerate(sessions)
+    ]
+
+
+def select_session_for_samples(samples, candidates, tolerance_sec=2.0, dominance_ratio=1.5):
+    observed = [float(item["flightTimeSec"]) for item in samples if item.get("flightTimeSec") is not None]
+    if not observed:
+        return {"status": "failed", "selected": None, "candidates": [], "dominanceSelected": False}
+    required_duration = max(observed)
+    plausible = [dict(candidate) for candidate in candidates
+                 if float(candidate.get("durationSec") or 0.0) + tolerance_sec >= required_duration]
+    plausible.sort(key=lambda item: float(item["durationSec"]), reverse=True)
+    if not plausible:
+        return {"status": "failed", "selected": None, "candidates": [], "dominanceSelected": False}
+    if len(plausible) == 1:
+        return {"status": "selected", "selected": plausible[0], "candidates": plausible, "dominanceSelected": False}
+    longest = float(plausible[0]["durationSec"])
+    second = float(plausible[1]["durationSec"])
+    if second <= 0 or longest >= second * dominance_ratio:
+        return {"status": "selected", "selected": plausible[0], "candidates": plausible, "dominanceSelected": True}
+    return {"status": "ambiguous", "selected": None, "candidates": plausible, "dominanceSelected": False}
 
 
 def extract_frame(path, time_sec, output_path):
