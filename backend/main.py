@@ -5391,7 +5391,10 @@ async def analyze_video(
     a warning in ``videoAnalysis`` rather than failing the whole request.
     """
     import json
-    from backend.video_analysis import build_sample_times, normalize_rois, probe_video
+    try:
+        from backend.video_analysis import build_sample_times, normalize_rois, probe_video
+    except ImportError:
+        from video_analysis import build_sample_times, normalize_rois, probe_video
 
     tlog_result = await analyze(file)
     if not isinstance(tlog_result, dict):
