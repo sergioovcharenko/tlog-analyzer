@@ -5375,15 +5375,16 @@ async def analyze(file: UploadFile = File(...)):
             except Exception:
                 pass
 
-
 # VIDEO_TLOG_ANALYSIS_ENDPOINT_V1
 @app.post("/analyze-video")
 async def analyze_video(
     file: UploadFile = File(...),
     video: UploadFile = File(...),
-    video_anchor_sec: float = Form(...),
-    tlog_anchor_sec: float = Form(...),
+    video_anchor_sec: float | None = Form(None),
+    tlog_anchor_sec: float | None = Form(None),
     rois_json: str = Form("[]"),
+    auto_sync: bool = Form(False),
+    flight_time_roi_json: str = Form(""),
 ):
     """Run the stable TLOG analyzer first, then add optional video metadata.
 
@@ -5392,9 +5393,19 @@ async def analyze_video(
     """
     import json
     try:
-        from backend.video_analysis import build_sample_times, normalize_rois, probe_video
+        from backend.video_analysis import (
+            build_sample_times,
+            normalize_rois,
+            probe_video,
+            run_flight_time_auto_sync,
+        )
     except ImportError:
-        from video_analysis import build_sample_times, normalize_rois, probe_video
+        from video_analysis import (
+            build_sample_times,
+            normalize_rois,
+            probe_video,
+            run_flight_time_auto_sync,
+        )
 
     tlog_result = await analyze(file)
     if not isinstance(tlog_result, dict):
@@ -5403,12 +5414,13 @@ async def analyze_video(
     video_result = {
         "enabled": True,
         "videoDurationSec": None,
-        "anchorVideoSec": float(video_anchor_sec),
-        "anchorTlogSec": float(tlog_anchor_sec),
+        "anchorVideoSec": float(video_anchor_sec) if video_anchor_sec is not None else None,
+        "anchorTlogSec": float(tlog_anchor_sec) if tlog_anchor_sec is not None else None,
         "rois": [],
         "observations": [],
         "correlations": [],
         "warnings": [],
+        "autoSync": None,
     }
     tlog_result["videoAnalysis"] = video_result
 
@@ -5432,18 +5444,19 @@ async def analyze_video(
 
         metadata = probe_video(temp_video_path)
         duration = float(metadata["durationSec"])
-        if not 0.0 <= float(video_anchor_sec) <= duration:
-            raise ValueError("Точка синхронізації відео виходить за межі ролика")
+        if video_anchor_sec is not None:
+            if not 0.0 <= float(video_anchor_sec) <= duration:
+                raise ValueError("Точка синхронізації відео виходить за межі ролика")
 
         timeline_times = []
         for row in tlog_result.get("timeline") or []:
-            if not isinstance(row, dict):
-                continue
-            t_ms = _timeline_graph_time_ms(row.get("time"))
-            if t_ms is not None:
-                timeline_times.append(t_ms / 1000.0)
-        if timeline_times and not min(timeline_times) <= float(tlog_anchor_sec) <= max(timeline_times):
-            raise ValueError("Точка синхронізації TLOG виходить за межі журналу")
+            if isinstance(row, dict):
+                t_ms = _timeline_graph_time_ms(row.get("time"))
+                if t_ms is not None:
+                    timeline_times.append(t_ms / 1000.0)
+        if tlog_anchor_sec is not None and timeline_times:
+            if not min(timeline_times) <= float(tlog_anchor_sec) <= max(timeline_times):
+                raise ValueError("Точка синхронізації TLOG виходить за межі журналу")
 
         parsed_rois = json.loads(rois_json or "[]")
         if not isinstance(parsed_rois, list):
@@ -5466,6 +5479,45 @@ async def analyze_video(
                 "warnings": roi_warnings,
             }
         )
+
+        if auto_sync:
+            try:
+                if not flight_time_roi_json:
+                    raise ValueError("Для автосинхронізації намалюй зону Flight Time")
+                flight_time_roi = json.loads(flight_time_roi_json)
+                if not isinstance(flight_time_roi, dict):
+                    raise ValueError("Flight Time ROI must be a JSON object")
+                auto_result = run_flight_time_auto_sync(
+                    temp_video_path,
+                    metadata,
+                    flight_time_roi,
+                    (tlog_result.get("flight") or {}).get("flightSessions") or [],
+                )
+            except Exception as exc:
+                auto_result = {
+                    "status": "failed",
+                    "confidence": "low",
+                    "selectedFlight": None,
+                    "armTlogSec": None,
+                    "offsetSec": None,
+                    "videoAnchorSec": None,
+                    "tlogAnchorSec": None,
+                    "samples": [],
+                    "offsetSpreadSec": None,
+                    "candidates": [],
+                    "warnings": [f"Автосинхронізація недоступна: {exc}"],
+                }
+            video_result["autoSync"] = auto_result
+            if (
+                auto_result.get("status") == "success"
+                and auto_result.get("confidence") in {"high", "medium"}
+            ):
+                video_result["anchorVideoSec"] = auto_result.get("videoAnchorSec")
+                video_result["anchorTlogSec"] = auto_result.get("tlogAnchorSec")
+        elif video_anchor_sec is None or tlog_anchor_sec is None:
+            video_result["warnings"].append(
+                "Для ручного відеоаналізу спочатку синхронізуй відео з TLOG"
+            )
     except Exception as exc:
         video_result["warnings"].append(f"Відеоаналіз недоступний: {exc}")
     finally:
