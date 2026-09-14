@@ -78,3 +78,57 @@ def test_video_decode_failure_keeps_tlog_result(monkeypatch):
     assert response_json["success"] is True
     assert response_json["videoAnalysis"]["enabled"] is True
     assert response_json["videoAnalysis"]["warnings"]
+
+
+def test_video_endpoint_works_from_render_backend_root():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    script = r'''
+from fastapi.testclient import TestClient
+import main
+import video_analysis
+
+async def fake_analyze(file):
+    return {
+        "success": True,
+        "timeline": [
+            {"time": "00:00.000", "eventType": "SNAPSHOT"},
+            {"time": "15:00.000", "eventType": "SNAPSHOT"},
+        ],
+    }
+
+main.analyze = fake_analyze
+video_analysis.probe_video = lambda path: {
+    "durationSec": 120.0,
+    "width": 1920,
+    "height": 1080,
+    "fps": 30.0,
+}
+
+client = TestClient(main.app)
+response = client.post(
+    "/analyze-video",
+    files={
+        "file": ("flight.tlog", b"tlog", "application/octet-stream"),
+        "video": ("clip.mp4", b"video", "video/mp4"),
+    },
+    data={
+        "video_anchor_sec": "37.0",
+        "tlog_anchor_sec": "822.0",
+        "rois_json": "[]",
+    },
+)
+assert response.status_code == 200, response.text
+assert response.json()["videoAnalysis"]["enabled"] is True
+'''
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repo_root / "backend",
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
