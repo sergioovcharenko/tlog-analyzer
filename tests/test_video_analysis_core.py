@@ -60,3 +60,41 @@ def test_correlation_ignores_events_outside_window():
     obs = [build_observation(10.0, 810.0, {"id": "v", "label": "Відеоканал"}, "video_degradation", "Артефакти", 0.8)]
     events = [{"timeSec": 814.0, "type": "RADIO_LOSS", "text": "-128 dBm"}]
     assert correlate_observations(obs, events, max_delta_sec=2.0) == []
+
+
+def test_packaged_ffmpeg_can_probe_and_extract_without_system_ffprobe(tmp_path):
+    import subprocess
+    import imageio_ffmpeg
+    from backend.video_analysis import extract_frame, probe_video
+
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    video_path = tmp_path / "sample.mp4"
+    frame_path = tmp_path / "frame.jpg"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:d=1:r=10",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(video_path),
+        ],
+        check=True,
+        timeout=30,
+    )
+
+    meta = probe_video(video_path)
+    assert meta["width"] == 160
+    assert meta["height"] == 90
+    assert meta["durationSec"] > 0
+    assert meta["fps"] > 0
+
+    extract_frame(video_path, 0.2, frame_path)
+    assert frame_path.exists()
+    assert frame_path.stat().st_size > 0
