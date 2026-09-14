@@ -2,32 +2,31 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Automatically synchronize an uploaded MP4/MOV with the correct TLOG flight session by OCR-reading the OSD `Flight Time` value from multiple cropped frames, validating the clock progression, selecting a physically plausible ARM session, and populating the existing video↔TLOG anchors.
+**Goal:** Automatically synchronize an uploaded MP4/MOV with the correct TLOG flight session by OCR-reading the OSD `Flight Time` from several cropped frames, validating that clock against media time, selecting a physically plausible ARM session, and populating the existing video↔TLOG anchors.
 
-**Architecture:** Keep the existing `/analyze-video` flow and manual anchor state. Add isolated OCR/synchronization helpers to `backend/video_analysis.py`, reuse `flight.flightSessions` from the stable TLOG analyzer, make manual anchors optional only when `auto_sync=true`, and return an inspectable `videoAnalysis.autoSync` result. The frontend adds a `Flight Time` ROI, an auto-sync action, confidence/result UI, and an ambiguity chooser; successful auto-sync writes the same `videoAnchorSec`/`tlogAnchorSec` variables already used by manual synchronization.
+**Architecture:** Preserve the current `/analyze-video` endpoint and manual anchor variables. Add OCR/synchronization helpers to `backend/video_analysis.py`, reuse `flight.flightSessions` produced by the stable analyzer, make manual anchors optional only for `auto_sync=true`, and return `videoAnalysis.autoSync`. The frontend adds one special ROI (`Flight Time`), an auto-sync action, confidence/result UI, and an ambiguity chooser; successful auto-sync writes the same `videoAnchorSec` and `tlogAnchorSec` used by manual sync.
 
-**Tech Stack:** Python 3, FastAPI, pymavlink, imageio-ffmpeg, RapidOCR via `rapidocr_onnxruntime`, ONNX Runtime, vanilla HTML/CSS/JavaScript, pytest, GitHub Actions/Render.
+**Tech Stack:** Python 3.11, FastAPI, pymavlink, imageio-ffmpeg, `rapidocr_onnxruntime` (RapidOCR + ONNX Runtime), vanilla HTML/CSS/JavaScript, pytest, GitHub Actions, Render.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-flight-time-auto-sync-design.md`
 
 ## Global Constraints
 
-- OCR runs only on the user-supplied `Flight Time` ROI; automatic ROI-position detection is out of scope for v1.
-- Sample exactly 7 useful frames for ordinary clips, reducing to at least 3 when possible for short clips.
-- Accept `HH:MM:SS` and `MM:SS`; accept only unambiguous OCR substitutions (`O→0`, `I/l/|→1`, punctuation-as-separator).
-- Adjacent OSD-time progression may differ from media-time progression by at most ±2.0 s.
-- High confidence: at least 4 valid OCR samples, one unambiguous selected TLOG session, offset spread ≤ 1.0 s.
-- Medium confidence: at least 3 valid OCR samples, one selected TLOG session, offset spread > 1.0 s and ≤ 2.0 s.
+- OCR reads only the user-drawn `Flight Time` ROI. Automatic ROI-position detection is out of scope for v1.
+- Sample 7 internal frames for normal clips; use at least 3 when possible for short clips.
+- Parse `HH:MM:SS` and `MM:SS`; accept only unambiguous substitutions `O→0`, `I/l/|→1`, and punctuation-as-separator.
+- OSD time progression may differ from media-time progression by at most ±2.0 s between adjacent samples.
+- High confidence requires at least 4 valid samples, one uniquely plausible TLOG session, and offset spread ≤ 1.0 s.
+- Medium confidence requires at least 3 valid samples and offset spread ≤ 2.0 s. If multiple sessions pass physical bounds but one is clearly dominant, it may be selected only at Medium confidence.
+- “Clearly dominant” means duration ≥ 1.5× the second-longest physically plausible session. Otherwise return `ambiguous` and require user confirmation.
 - Low confidence never changes anchors automatically.
-- A clearly dominant session means its duration is at least 1.5× the next-longest physically plausible session; this resolves the spec's “clearly dominant” rule. A dominance-based selection is capped at Medium confidence because more than one session passed the physical-bounds filter.
-- Manual sync and ordinary TLOG-only `/analyze` behavior remain unchanged.
-- Auto-sync failure must return the normal TLOG result plus an explanatory `videoAnalysis.autoSync` failure/ambiguity structure.
-- MP4/MOV limits, temporary-file cleanup, FFmpeg timeouts, and existing ROI validation remain in force.
-- The provided real pair is validation data only; no filename, timestamp, ROI coordinate, or flight number may be hard-coded in production code.
+- Existing TLOG-only `/analyze`, manual video sync, MP4/MOV validation, FFmpeg timeout/cleanup, and ROI bounds validation must remain intact.
+- Auto-sync failure must return the normal TLOG result and an inspectable failed/ambiguous `videoAnalysis.autoSync`; it must not turn a successful TLOG parse into an HTTP failure.
+- The supplied `.tlog` and `.mp4` are validation inputs only. Their filename, flight number, and ROI coordinates must never appear in production code.
 
 ---
 
-### Task 1: Add Flight Time OCR primitives and dependency
+### Task 1: Add Flight Time parser, crop extraction, and OCR adapter
 
 **Files:**
 - Modify: `backend/requirements.txt`
@@ -35,16 +34,15 @@
 - Create: `tests/test_flight_time_auto_sync.py`
 
 **Interfaces:**
-- Consumes: existing `validate_roi()`, `_ffmpeg_executable()` and video frame dimensions.
-- Produces: `parse_flight_time_text(text) -> int | None`, `extract_frame_crop(video_path, time_sec, roi, output_path) -> None`, `read_flight_time_text(image_path) -> dict`.
+- Consumes: existing `_ffmpeg_executable()` and validated ROI dicts.
+- Produces: `parse_flight_time_text(text) -> int | None`, `extract_frame_crop(path, time_sec, roi, output_path) -> None`, `read_flight_time_text(image_path) -> dict`.
 
-- [ ] **Step 1: Write failing parser and crop/OCR-isolation tests**
+- [ ] **Step 1: Write failing parser/OCR-adapter tests**
 
-Add `tests/test_flight_time_auto_sync.py`:
+Create `tests/test_flight_time_auto_sync.py`:
 
 ```python
 import pytest
-
 from backend import video_analysis as va
 
 
@@ -54,10 +52,9 @@ from backend import video_analysis as va
         ("00:05:05", 305),
         ("05:05", 305),
         ("Flight Time 00:04:45", 285),
-        ("00.O5.O5", 305),
         ("O0:O5:O5", 305),
+        ("00.O5.O5", 305),
         ("00;05;05", 305),
-        ("001I05", None),
         ("00:73:05", None),
         ("noise", None),
     ],
@@ -82,41 +79,17 @@ def test_read_flight_time_text_wraps_rapidocr(monkeypatch, tmp_path):
     assert result["flightTimeSec"] == 305
     assert "00:05:05" in result["text"]
     assert result["confidence"] == pytest.approx(0.96)
-
-
-def test_extract_frame_crop_uses_validated_roi(monkeypatch, tmp_path):
-    calls = []
-
-    def fake_run(args, **kwargs):
-        calls.append(args)
-
-    monkeypatch.setattr(va.subprocess, "run", fake_run)
-    out = tmp_path / "crop.png"
-    va.extract_frame_crop(
-        "video.mp4",
-        12.5,
-        {"id": "ft", "label": "Flight Time", "x": 100, "y": 50, "width": 220, "height": 48},
-        out,
-    )
-    command = calls[0]
-    assert "-ss" in command
-    assert "12.500000" in command
-    vf = command[command.index("-vf") + 1]
-    assert "crop=220:48:100:50" in vf
-    assert "scale=iw*3:ih*3" in vf
 ```
 
-- [ ] **Step 2: Run the new tests and verify RED**
-
-Run:
+- [ ] **Step 2: Run parser/OCR test RED**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py -v
 ```
 
-Expected: collection/test failures because `parse_flight_time_text`, `_get_ocr_engine`, `read_flight_time_text`, and `extract_frame_crop` do not exist yet.
+Expected: FAIL because the parser/OCR helpers do not exist.
 
-- [ ] **Step 3: Add RapidOCR dependency and minimal OCR helpers**
+- [ ] **Step 3: Add the OCR dependency and implementation**
 
 Append to `backend/requirements.txt`:
 
@@ -124,16 +97,15 @@ Append to `backend/requirements.txt`:
 rapidocr-onnxruntime
 ```
 
-At the top of `backend/video_analysis.py`, add imports used by the new helpers:
+Add module imports to `backend/video_analysis.py`:
 
 ```python
 from functools import lru_cache
-from pathlib import Path
 import re
 import subprocess
 ```
 
-Add these helpers after `_ffmpeg_executable()`:
+Add after `_ffmpeg_executable()`:
 
 ```python
 _TIME_HMS_RE = re.compile(r"(?<!\d)(\d{1,2})\s*:\s*(\d{2})\s*:\s*(\d{2})(?!\d)")
@@ -141,26 +113,24 @@ _TIME_MS_RE = re.compile(r"(?<!\d)(\d{1,3})\s*:\s*(\d{2})(?!\d)")
 
 
 def _normalize_ocr_time_text(text):
-    normalized = str(text or "").upper()
-    normalized = normalized.replace("O", "0")
-    normalized = normalized.replace("I", "1").replace("L", "1").replace("|", "1")
-    normalized = re.sub(r"[.;,]", ":", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized
+    value = str(text or "").upper()
+    value = value.replace("O", "0")
+    value = value.replace("I", "1").replace("L", "1").replace("|", "1")
+    value = re.sub(r"[.;,]", ":", value)
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def parse_flight_time_text(text):
-    normalized = _normalize_ocr_time_text(text)
-    match = _TIME_HMS_RE.search(normalized)
+    value = _normalize_ocr_time_text(text)
+    match = _TIME_HMS_RE.search(value)
     if match:
-        hours, minutes, seconds = (int(value) for value in match.groups())
+        hours, minutes, seconds = (int(part) for part in match.groups())
         if minutes >= 60 or seconds >= 60:
             return None
         return hours * 3600 + minutes * 60 + seconds
-
-    match = _TIME_MS_RE.search(normalized)
+    match = _TIME_MS_RE.search(value)
     if match:
-        minutes, seconds = (int(value) for value in match.groups())
+        minutes, seconds = (int(part) for part in match.groups())
         if seconds >= 60:
             return None
         return minutes * 60 + seconds
@@ -170,13 +140,11 @@ def parse_flight_time_text(text):
 @lru_cache(maxsize=1)
 def _get_ocr_engine():
     from rapidocr_onnxruntime import RapidOCR
-
     return RapidOCR()
 
 
 def read_flight_time_text(image_path):
-    engine = _get_ocr_engine()
-    rows, _elapsed = engine(str(image_path))
+    rows, _elapsed = _get_ocr_engine()(str(image_path))
     rows = rows or []
     tokens = []
     scores = []
@@ -202,7 +170,6 @@ def read_flight_time_text(image_path):
                 joined = text
                 confidence = score
                 break
-
     return {
         "text": joined,
         "flightTimeSec": parsed,
@@ -211,27 +178,17 @@ def read_flight_time_text(image_path):
 
 
 def extract_frame_crop(path, time_sec, roi, output_path):
+    timestamp = max(0.0, float(time_sec))
     x = int(round(float(roi["x"])))
     y = int(round(float(roi["y"])))
     width = max(1, int(round(float(roi["width"]))))
     height = max(1, int(round(float(roi["height"]))))
-    timestamp = max(0.0, float(time_sec))
     subprocess.run(
         [
-            _ffmpeg_executable(),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            f"{timestamp:.6f}",
-            "-i",
-            str(path),
-            "-frames:v",
-            "1",
-            "-vf",
-            f"crop={width}:{height}:{x}:{y},scale=iw*3:ih*3:flags=lanczos,format=gray",
-            "-y",
-            str(output_path),
+            _ffmpeg_executable(), "-hide_banner", "-loglevel", "error",
+            "-ss", f"{timestamp:.6f}", "-i", str(path), "-frames:v", "1",
+            "-vf", f"crop={width}:{height}:{x}:{y},scale=iw*3:ih*3:flags=lanczos,format=gray",
+            "-y", str(output_path),
         ],
         check=True,
         capture_output=True,
@@ -239,19 +196,15 @@ def extract_frame_crop(path, time_sec, roi, output_path):
     )
 ```
 
-Keep the existing `extract_frame()` function intact for other video-analysis uses.
-
-- [ ] **Step 4: Run OCR primitive tests GREEN and existing video core tests**
-
-Run:
+- [ ] **Step 4: Run Task 1 tests GREEN**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py tests/test_video_analysis_core.py -v
 ```
 
-Expected: all tests PASS.
+Expected: PASS.
 
-- [ ] **Step 5: Commit OCR primitives**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/requirements.txt backend/video_analysis.py tests/test_flight_time_auto_sync.py
@@ -260,19 +213,19 @@ git commit -m "feat: add Flight Time OCR primitives"
 
 ---
 
-### Task 2: Validate OSD clock progression and rank TLOG flight sessions
+### Task 2: Validate the OSD clock and select a physically plausible ARM session
 
 **Files:**
 - Modify: `backend/video_analysis.py`
 - Modify: `tests/test_flight_time_auto_sync.py`
 
 **Interfaces:**
-- Consumes: OCR samples shaped as `{videoSec, flightTimeSec, ocrText, ocrConfidence}` and existing `flight.flightSessions` objects containing `number`, `armTimestamp`, `endTimestamp`, `duration`, `endedArmed`.
-- Produces: `build_auto_sync_sample_times(duration_sec) -> list[float]`, `validate_flight_time_samples(samples) -> dict`, `build_session_candidates(flight_sessions) -> list[dict]`, `select_session_for_samples(samples, candidates) -> dict`.
+- Consumes: samples `{videoSec, flightTimeSec, ocrText, ocrConfidence}` and stable analyzer sessions `{number, armTimestamp, duration, endedArmed}`.
+- Produces: `build_auto_sync_sample_times()`, `validate_flight_time_samples()`, `build_session_candidates()`, `select_session_for_samples()`.
 
-- [ ] **Step 1: Add failing clock-validation and session-selection tests**
+- [ ] **Step 1: Add failing synchronization-core tests**
 
-Append to `tests/test_flight_time_auto_sync.py`:
+Append:
 
 ```python
 def _sample(video_sec, flight_time_sec):
@@ -284,19 +237,9 @@ def _sample(video_sec, flight_time_sec):
     }
 
 
-def test_build_auto_sync_sample_times_returns_seven_internal_points():
-    times = va.build_auto_sync_sample_times(74.0)
-    assert len(times) == 7
-    assert times == sorted(times)
-    assert 0.0 < times[0] < times[-1] < 74.0
-
-
-def test_validate_flight_time_samples_accepts_stable_clock():
+def test_stable_clock_is_high_confidence():
     result = va.validate_flight_time_samples([
-        _sample(5, 290),
-        _sample(15, 300),
-        _sample(25, 310),
-        _sample(35, 320),
+        _sample(5, 290), _sample(15, 300), _sample(25, 310), _sample(35, 320)
     ])
     assert result["valid"] is True
     assert result["confidence"] == "high"
@@ -304,38 +247,35 @@ def test_validate_flight_time_samples_accepts_stable_clock():
     assert result["offsetSpreadSec"] == pytest.approx(0.0)
 
 
-def test_validate_flight_time_samples_rejects_reset_or_large_drift():
-    reset = va.validate_flight_time_samples([
+def test_clock_reset_is_low_confidence():
+    result = va.validate_flight_time_samples([
         _sample(5, 290), _sample(15, 300), _sample(25, 4)
     ])
-    drift = va.validate_flight_time_samples([
-        _sample(5, 290), _sample(15, 306), _sample(25, 316)
-    ])
-    assert reset["valid"] is False
-    assert reset["confidence"] == "low"
-    assert drift["valid"] is False
+    assert result["valid"] is False
+    assert result["confidence"] == "low"
+    assert result["reason"] == "flight_time_reset"
 
 
-def test_short_sessions_are_rejected_by_observed_flight_time():
+def test_short_sessions_are_rejected():
     sessions = [
-        {"number": 1, "armTimestamp": 1000.0, "endTimestamp": 1010.0, "duration": 10.0, "endedArmed": False},
-        {"number": 2, "armTimestamp": 1100.0, "endTimestamp": 1111.0, "duration": 11.0, "endedArmed": False},
-        {"number": 4, "armTimestamp": 1185.397, "endTimestamp": 1600.0, "duration": 414.603, "endedArmed": True},
+        {"number": 1, "armTimestamp": 1000.0, "duration": 10.0, "endedArmed": False},
+        {"number": 2, "armTimestamp": 1090.193, "duration": 10.0, "endedArmed": False},
+        {"number": 3, "armTimestamp": 1124.278, "duration": 10.0, "endedArmed": False},
+        {"number": 4, "armTimestamp": 1185.397, "duration": 647.4, "endedArmed": True},
     ]
-    candidates = va.build_session_candidates(sessions)
-    selected = va.select_session_for_samples(
+    result = va.select_session_for_samples(
         [_sample(5, 290), _sample(15, 300), _sample(25, 310), _sample(35, 320)],
-        candidates,
+        va.build_session_candidates(sessions),
     )
-    assert selected["status"] == "selected"
-    assert selected["selected"]["number"] == 4
-    assert selected["selected"]["armTlogSec"] == pytest.approx(185.397)
+    assert result["status"] == "selected"
+    assert result["selected"]["number"] == 4
+    assert result["selected"]["armTlogSec"] == pytest.approx(185.397)
 
 
-def test_similarly_long_plausible_sessions_are_ambiguous():
+def test_similar_long_sessions_are_ambiguous():
     sessions = [
-        {"number": 1, "armTimestamp": 1000.0, "endTimestamp": 1400.0, "duration": 400.0, "endedArmed": False},
-        {"number": 2, "armTimestamp": 1500.0, "endTimestamp": 1880.0, "duration": 380.0, "endedArmed": False},
+        {"number": 1, "armTimestamp": 1000.0, "duration": 400.0, "endedArmed": False},
+        {"number": 2, "armTimestamp": 1500.0, "duration": 380.0, "endedArmed": False},
     ]
     result = va.select_session_for_samples(
         [_sample(5, 100), _sample(15, 110), _sample(25, 120)],
@@ -345,15 +285,15 @@ def test_similarly_long_plausible_sessions_are_ambiguous():
     assert [item["number"] for item in result["candidates"]] == [1, 2]
 ```
 
-- [ ] **Step 2: Run targeted tests RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
-pytest tests/test_flight_time_auto_sync.py -k "sample_times or validate_flight or sessions or ambiguous" -v
+pytest tests/test_flight_time_auto_sync.py -k "stable_clock or clock_reset or short_sessions or similar_long" -v
 ```
 
-Expected: FAIL because the four synchronization helpers do not exist.
+Expected: FAIL because the synchronization helpers do not exist.
 
-- [ ] **Step 3: Implement deterministic sampling, validation, and session bounds**
+- [ ] **Step 3: Implement sampling, validation, and session selection**
 
 Add to `backend/video_analysis.py`:
 
@@ -368,75 +308,39 @@ def build_auto_sync_sample_times(duration_sec):
     count = 7 if duration >= 6.0 else 3
     start = min(1.0, duration * 0.10)
     end = max(start, duration - min(1.0, duration * 0.10))
-    if count == 1 or end <= start:
-        return [round(duration / 2.0, 3)]
     return [round(start + (end - start) * i / (count - 1), 3) for i in range(count)]
 
 
 def validate_flight_time_samples(samples, tolerance_sec=2.0):
-    valid_samples = [
-        dict(item)
-        for item in (samples or [])
-        if isinstance(item, dict)
-        and item.get("flightTimeSec") is not None
-        and item.get("videoSec") is not None
-    ]
-    valid_samples.sort(key=lambda item: float(item["videoSec"]))
-    if len(valid_samples) < 3:
-        return {
-            "valid": False,
-            "confidence": "low",
-            "samples": valid_samples,
-            "flightMinusVideoSec": None,
-            "offsetSpreadSec": None,
-            "reason": "not_enough_samples",
-        }
-
-    for previous, current in zip(valid_samples, valid_samples[1:]):
+    items = [dict(item) for item in samples if item.get("flightTimeSec") is not None]
+    items.sort(key=lambda item: float(item["videoSec"]))
+    if len(items) < 3:
+        return {"valid": False, "confidence": "low", "samples": items,
+                "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                "reason": "not_enough_samples"}
+    for previous, current in zip(items, items[1:]):
         video_delta = float(current["videoSec"]) - float(previous["videoSec"])
         flight_delta = float(current["flightTimeSec"]) - float(previous["flightTimeSec"])
         if flight_delta < 0:
-            return {
-                "valid": False,
-                "confidence": "low",
-                "samples": valid_samples,
-                "flightMinusVideoSec": None,
-                "offsetSpreadSec": None,
-                "reason": "flight_time_reset",
-            }
+            return {"valid": False, "confidence": "low", "samples": items,
+                    "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                    "reason": "flight_time_reset"}
         if abs(flight_delta - video_delta) > float(tolerance_sec):
-            return {
-                "valid": False,
-                "confidence": "low",
-                "samples": valid_samples,
-                "flightMinusVideoSec": None,
-                "offsetSpreadSec": None,
-                "reason": "clock_drift",
-            }
-
-    relative_offsets = [
-        float(item["flightTimeSec"]) - float(item["videoSec"])
-        for item in valid_samples
-    ]
-    median_offset = float(statistics.median(relative_offsets))
-    spread = max(abs(value - median_offset) for value in relative_offsets)
+            return {"valid": False, "confidence": "low", "samples": items,
+                    "flightMinusVideoSec": None, "offsetSpreadSec": None,
+                    "reason": "clock_drift"}
+    offsets = [float(item["flightTimeSec"]) - float(item["videoSec"]) for item in items]
+    median_offset = float(statistics.median(offsets))
+    spread = max(abs(value - median_offset) for value in offsets)
     if spread > 2.0:
-        confidence = "low"
-        is_valid = False
-    elif len(valid_samples) >= 4 and spread <= 1.0:
-        confidence = "high"
-        is_valid = True
+        confidence, valid, reason = "low", False, "offset_spread"
+    elif len(items) >= 4 and spread <= 1.0:
+        confidence, valid, reason = "high", True, None
     else:
-        confidence = "medium"
-        is_valid = True
-    return {
-        "valid": is_valid,
-        "confidence": confidence,
-        "samples": valid_samples,
-        "flightMinusVideoSec": round(median_offset, 3),
-        "offsetSpreadSec": round(spread, 3),
-        "reason": None if is_valid else "offset_spread",
-    }
+        confidence, valid, reason = "medium", True, None
+    return {"valid": valid, "confidence": confidence, "samples": items,
+            "flightMinusVideoSec": round(median_offset, 3),
+            "offsetSpreadSec": round(spread, 3), "reason": reason}
 
 
 def build_session_candidates(flight_sessions):
@@ -444,43 +348,37 @@ def build_session_candidates(flight_sessions):
     if not sessions:
         return []
     base_arm = float(sessions[0]["armTimestamp"])
-    candidates = []
-    for session in sessions:
-        arm_abs = float(session["armTimestamp"])
-        duration = max(0.0, float(session.get("duration") or 0.0))
-        candidates.append({
-            "number": int(session.get("number") or len(candidates) + 1),
-            "armTlogSec": round(arm_abs - base_arm, 3),
-            "durationSec": round(duration, 3),
+    return [
+        {
+            "number": int(session.get("number") or index + 1),
+            "armTlogSec": round(float(session["armTimestamp"]) - base_arm, 3),
+            "durationSec": round(max(0.0, float(session.get("duration") or 0.0)), 3),
             "endedArmed": bool(session.get("endedArmed")),
-        })
-    return candidates
+        }
+        for index, session in enumerate(sessions)
+    ]
 
 
 def select_session_for_samples(samples, candidates, tolerance_sec=2.0, dominance_ratio=1.5):
     observed = [float(item["flightTimeSec"]) for item in samples if item.get("flightTimeSec") is not None]
     if not observed:
-        return {"status": "failed", "selected": None, "candidates": []}
+        return {"status": "failed", "selected": None, "candidates": [], "dominanceSelected": False}
     required_duration = max(observed)
-    plausible = [
-        dict(candidate)
-        for candidate in candidates
-        if float(candidate.get("durationSec") or 0.0) + float(tolerance_sec) >= required_duration
-    ]
+    plausible = [dict(candidate) for candidate in candidates
+                 if float(candidate.get("durationSec") or 0.0) + tolerance_sec >= required_duration]
     plausible.sort(key=lambda item: float(item["durationSec"]), reverse=True)
     if not plausible:
-        return {"status": "failed", "selected": None, "candidates": []}
+        return {"status": "failed", "selected": None, "candidates": [], "dominanceSelected": False}
     if len(plausible) == 1:
         return {"status": "selected", "selected": plausible[0], "candidates": plausible, "dominanceSelected": False}
-
     longest = float(plausible[0]["durationSec"])
     second = float(plausible[1]["durationSec"])
-    if second <= 0.0 or longest >= second * float(dominance_ratio):
+    if second <= 0 or longest >= second * dominance_ratio:
         return {"status": "selected", "selected": plausible[0], "candidates": plausible, "dominanceSelected": True}
     return {"status": "ambiguous", "selected": None, "candidates": plausible, "dominanceSelected": False}
 ```
 
-- [ ] **Step 4: Run synchronization-core tests GREEN**
+- [ ] **Step 4: Run GREEN**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py -v
@@ -488,7 +386,7 @@ pytest tests/test_flight_time_auto_sync.py -v
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit synchronization core**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/video_analysis.py tests/test_flight_time_auto_sync.py
@@ -497,42 +395,36 @@ git commit -m "feat: validate Flight Time synchronization"
 
 ---
 
-### Task 3: Build the bounded OCR auto-sync orchestrator
+### Task 3: Build the auto-sync orchestrator
 
 **Files:**
 - Modify: `backend/video_analysis.py`
 - Modify: `tests/test_flight_time_auto_sync.py`
 
 **Interfaces:**
-- Consumes: video path, probed metadata, validated `Flight Time` ROI, `flightSessions`, and injectable OCR reader.
-- Produces: `run_flight_time_auto_sync(video_path, metadata, roi, flight_sessions, ocr_reader=read_flight_time_text) -> dict` with `status`, `confidence`, `selectedFlight`, anchors, samples, candidate list, spread, and warnings.
+- Consumes: video path, probed metadata, one Flight Time ROI, stable `flightSessions`, injectable OCR function.
+- Produces: `run_flight_time_auto_sync(...) -> dict` with `status`, `confidence`, candidate evidence, selected flight, anchors, samples, spread, warnings.
 
-- [ ] **Step 1: Add failing orchestration tests with OCR injected**
+- [ ] **Step 1: Add failing orchestrator tests**
 
 Append:
 
 ```python
-def test_run_auto_sync_returns_existing_anchor_shape(monkeypatch, tmp_path):
+def test_run_auto_sync_returns_anchor_pair(monkeypatch):
     monkeypatch.setattr(va, "extract_frame_crop", lambda *args, **kwargs: None)
-
     values = iter([285, 297, 309, 321, 333, 345, 357])
     def fake_ocr(_path):
         value = next(values)
-        minutes, seconds = divmod(value, 60)
-        return {
-            "text": f"00:{minutes:02d}:{seconds:02d}",
-            "flightTimeSec": value,
-            "confidence": 0.96,
-        }
+        return {"text": str(value), "flightTimeSec": value, "confidence": 0.96}
 
     sessions = [
         {"number": 1, "armTimestamp": 1000.0, "duration": 10.0, "endedArmed": False},
-        {"number": 4, "armTimestamp": 1185.397, "duration": 500.0, "endedArmed": True},
+        {"number": 4, "armTimestamp": 1185.397, "duration": 647.4, "endedArmed": True},
     ]
     result = va.run_flight_time_auto_sync(
         "flight.mp4",
-        {"durationSec": 74.0, "width": 1920, "height": 1080, "fps": 30.0},
-        {"id": "ft", "label": "Flight Time", "x": 100, "y": 50, "width": 220, "height": 48},
+        {"durationSec": 74.0, "width": 848, "height": 530, "fps": 30.0},
+        {"id": "ft", "label": "Flight Time", "x": 390, "y": 438, "width": 110, "height": 37},
         sessions,
         ocr_reader=fake_ocr,
     )
@@ -540,11 +432,9 @@ def test_run_auto_sync_returns_existing_anchor_shape(monkeypatch, tmp_path):
     assert result["selectedFlight"] == 4
     assert result["videoAnchorSec"] == 0.0
     assert result["tlogAnchorSec"] == result["offsetSec"]
-    assert result["confidence"] in {"high", "medium"}
-    assert len(result["samples"]) == 7
 
 
-def test_run_auto_sync_ambiguous_does_not_return_anchors(monkeypatch):
+def test_run_auto_sync_ambiguous_never_sets_anchors(monkeypatch):
     monkeypatch.setattr(va, "extract_frame_crop", lambda *args, **kwargs: None)
     values = iter([100, 112, 124, 136, 148, 160, 172])
     def fake_ocr(_path):
@@ -557,8 +447,8 @@ def test_run_auto_sync_ambiguous_does_not_return_anchors(monkeypatch):
     ]
     result = va.run_flight_time_auto_sync(
         "flight.mp4",
-        {"durationSec": 74.0, "width": 1920, "height": 1080, "fps": 30.0},
-        {"id": "ft", "label": "Flight Time", "x": 1, "y": 1, "width": 100, "height": 30},
+        {"durationSec": 74.0, "width": 848, "height": 530, "fps": 30.0},
+        {"id": "ft", "label": "Flight Time", "x": 390, "y": 438, "width": 110, "height": 37},
         sessions,
         ocr_reader=fake_ocr,
     )
@@ -566,33 +456,34 @@ def test_run_auto_sync_ambiguous_does_not_return_anchors(monkeypatch):
     assert result["confidence"] == "low"
     assert result["videoAnchorSec"] is None
     assert result["tlogAnchorSec"] is None
-    assert len(result["candidates"]) == 2
 ```
 
-- [ ] **Step 2: Run orchestration tests RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py -k "run_auto_sync" -v
 ```
 
-Expected: FAIL because `run_flight_time_auto_sync` is undefined.
+Expected: FAIL because `run_flight_time_auto_sync` does not exist.
 
-- [ ] **Step 3: Implement the orchestration function with temp-crop cleanup**
+- [ ] **Step 3: Implement the orchestrator**
 
-Add to `backend/video_analysis.py`:
+Add imports:
 
 ```python
+from pathlib import Path
 import tempfile
+```
 
+Add:
 
+```python
 def run_flight_time_auto_sync(video_path, metadata, roi, flight_sessions, ocr_reader=read_flight_time_text):
     normalized_roi = validate_roi(roi, int(metadata["width"]), int(metadata["height"]))
-    sample_times = build_auto_sync_sample_times(float(metadata["durationSec"]))
     samples = []
     warnings = []
-
     with tempfile.TemporaryDirectory(prefix="flight-time-ocr-") as temp_dir:
-        for index, video_sec in enumerate(sample_times):
+        for index, video_sec in enumerate(build_auto_sync_sample_times(metadata["durationSec"])):
             crop_path = Path(temp_dir) / f"flight_time_{index}.png"
             try:
                 extract_frame_crop(video_path, video_sec, normalized_roi, crop_path)
@@ -600,221 +491,112 @@ def run_flight_time_auto_sync(video_path, metadata, roi, flight_sessions, ocr_re
             except Exception as exc:
                 warnings.append(f"OCR {video_sec:.1f} с: {exc}")
                 continue
-            flight_time_sec = reading.get("flightTimeSec")
-            if flight_time_sec is None:
+            if reading.get("flightTimeSec") is None:
                 continue
             samples.append({
                 "videoSec": round(float(video_sec), 3),
-                "flightTimeSec": float(flight_time_sec),
+                "flightTimeSec": float(reading["flightTimeSec"]),
                 "ocrText": str(reading.get("text") or ""),
                 "ocrConfidence": round(float(reading.get("confidence") or 0.0), 3),
             })
 
     validation = validate_flight_time_samples(samples)
     if not validation["valid"]:
-        return {
-            "status": "failed",
-            "confidence": "low",
-            "selectedFlight": None,
-            "armTlogSec": None,
-            "offsetSec": None,
-            "videoAnchorSec": None,
-            "tlogAnchorSec": None,
-            "samples": validation["samples"],
-            "offsetSpreadSec": validation["offsetSpreadSec"],
-            "candidates": [],
-            "warnings": warnings + ["Не вдалося стабільно прочитати Flight Time"],
-        }
+        return {"status": "failed", "confidence": "low", "selectedFlight": None,
+                "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+                "tlogAnchorSec": None, "samples": validation["samples"],
+                "offsetSpreadSec": validation["offsetSpreadSec"], "candidates": [],
+                "warnings": warnings + ["Не вдалося стабільно прочитати Flight Time"]}
 
-    candidates = build_session_candidates(flight_sessions)
-    selection = select_session_for_samples(validation["samples"], candidates)
-    if selection["status"] == "failed":
-        return {
-            "status": "failed",
-            "confidence": "low",
-            "selectedFlight": None,
-            "armTlogSec": None,
-            "offsetSec": None,
-            "videoAnchorSec": None,
-            "tlogAnchorSec": None,
-            "samples": validation["samples"],
-            "offsetSpreadSec": validation["offsetSpreadSec"],
-            "candidates": [],
-            "warnings": warnings + ["Flight Time не поміщається в жодну ARM-сесію TLOG"],
-        }
-
+    selection = select_session_for_samples(
+        validation["samples"], build_session_candidates(flight_sessions)
+    )
     flight_minus_video = float(validation["flightMinusVideoSec"])
     candidate_payloads = []
     for candidate in selection["candidates"]:
         item = dict(candidate)
-        item["offsetSec"] = round(float(candidate["armTlogSec"]) + flight_minus_video, 3)
+        item["offsetSec"] = round(float(item["armTlogSec"]) + flight_minus_video, 3)
         candidate_payloads.append(item)
 
+    if selection["status"] == "failed":
+        return {"status": "failed", "confidence": "low", "selectedFlight": None,
+                "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+                "tlogAnchorSec": None, "samples": validation["samples"],
+                "offsetSpreadSec": validation["offsetSpreadSec"], "candidates": [],
+                "warnings": warnings + ["Flight Time не поміщається в жодну ARM-сесію TLOG"]}
     if selection["status"] == "ambiguous":
-        return {
-            "status": "ambiguous",
-            "confidence": "low",
-            "selectedFlight": None,
-            "armTlogSec": None,
-            "offsetSec": None,
-            "videoAnchorSec": None,
-            "tlogAnchorSec": None,
-            "samples": validation["samples"],
-            "offsetSpreadSec": validation["offsetSpreadSec"],
-            "candidates": candidate_payloads,
-            "warnings": warnings + ["Кілька ARM-сесій однаково правдоподібні — потрібен вибір користувача"],
-        }
+        return {"status": "ambiguous", "confidence": "low", "selectedFlight": None,
+                "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+                "tlogAnchorSec": None, "samples": validation["samples"],
+                "offsetSpreadSec": validation["offsetSpreadSec"],
+                "candidates": candidate_payloads,
+                "warnings": warnings + ["Кілька ARM-сесій правдоподібні — потрібен вибір користувача"]}
 
     selected = selection["selected"]
     offset_sec = round(float(selected["armTlogSec"]) + flight_minus_video, 3)
     confidence = validation["confidence"]
-    if selection.get("dominanceSelected") and confidence == "high":
+    if selection["dominanceSelected"] and confidence == "high":
         confidence = "medium"
-
     mapped_samples = []
     for sample in validation["samples"]:
-        mapped = dict(sample)
-        mapped["mappedTlogSec"] = round(float(selected["armTlogSec"]) + float(sample["flightTimeSec"]), 3)
-        mapped_samples.append(mapped)
-
-    return {
-        "status": "success",
-        "confidence": confidence,
-        "selectedFlight": int(selected["number"]),
-        "armTlogSec": round(float(selected["armTlogSec"]), 3),
-        "offsetSec": offset_sec,
-        "videoAnchorSec": 0.0,
-        "tlogAnchorSec": offset_sec,
-        "samples": mapped_samples,
-        "offsetSpreadSec": validation["offsetSpreadSec"],
-        "candidates": candidate_payloads,
-        "warnings": warnings,
-    }
+        item = dict(sample)
+        item["mappedTlogSec"] = round(float(selected["armTlogSec"]) + float(sample["flightTimeSec"]), 3)
+        mapped_samples.append(item)
+    return {"status": "success", "confidence": confidence,
+            "selectedFlight": int(selected["number"]),
+            "armTlogSec": round(float(selected["armTlogSec"]), 3),
+            "offsetSec": offset_sec, "videoAnchorSec": 0.0,
+            "tlogAnchorSec": offset_sec, "samples": mapped_samples,
+            "offsetSpreadSec": validation["offsetSpreadSec"],
+            "candidates": candidate_payloads, "warnings": warnings}
 ```
 
-- [ ] **Step 4: Run all auto-sync core tests**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py tests/test_video_analysis_core.py -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit orchestrator**
-
-```bash
 git add backend/video_analysis.py tests/test_flight_time_auto_sync.py
 git commit -m "feat: calculate Flight Time auto-sync anchors"
 ```
 
 ---
 
-### Task 4: Extend `/analyze-video` without breaking manual synchronization
+### Task 4: Extend `/analyze-video` while preserving manual behavior
 
 **Files:**
-- Modify: `backend/main.py` at `# VIDEO_TLOG_ANALYSIS_ENDPOINT_V1`
+- Modify: `backend/main.py:5380-5465` (`# VIDEO_TLOG_ANALYSIS_ENDPOINT_V1`)
 - Modify: `tests/test_video_analysis_api.py`
 
 **Interfaces:**
-- Consumes: multipart fields `file`, `video`, optional `video_anchor_sec`, optional `tlog_anchor_sec`, `rois_json`, `auto_sync`, optional `flight_time_roi_json`.
-- Produces: existing `videoAnalysis` plus optional `videoAnalysis.autoSync`; manual requests remain byte-for-byte compatible in their existing anchor fields.
+- Request: current multipart fields plus optional `auto_sync` and `flight_time_roi_json`.
+- Response: current `videoAnalysis` plus `autoSync`; successful High/Medium auto-sync populates current anchor fields.
 
-- [ ] **Step 1: Add failing API tests for optional anchors and auto-sync**
+- [ ] **Step 1: Add failing API tests**
 
-Append to `tests/test_video_analysis_api.py`:
+Add a test that posts `auto_sync=true` without manual anchors and monkeypatches `run_flight_time_auto_sync()` to return:
 
 ```python
-def test_video_endpoint_auto_sync_does_not_require_manual_anchors(monkeypatch):
-    async def fake_analyze(file):
-        result = _base_tlog_result()
-        result["flight"]["flightSessions"] = [
-            {"number": 1, "armTimestamp": 1000.0, "duration": 500.0, "endedArmed": True}
-        ]
-        return result
-
-    monkeypatch.setattr(main, "analyze", fake_analyze)
-    import backend.video_analysis as va
-    monkeypatch.setattr(va, "probe_video", lambda path: {
-        "durationSec": 74.0, "width": 1920, "height": 1080, "fps": 30.0
-    })
-    monkeypatch.setattr(va, "run_flight_time_auto_sync", lambda *args, **kwargs: {
-        "status": "success",
-        "confidence": "high",
-        "selectedFlight": 1,
-        "armTlogSec": 0.0,
-        "offsetSec": 285.0,
-        "videoAnchorSec": 0.0,
-        "tlogAnchorSec": 285.0,
-        "samples": [],
-        "offsetSpreadSec": 0.2,
-        "candidates": [],
-        "warnings": [],
-    })
-
-    client = TestClient(main.app)
-    response = client.post(
-        "/analyze-video",
-        files={
-            "file": ("flight.tlog", b"tlog", "application/octet-stream"),
-            "video": ("clip.mp4", b"video", "video/mp4"),
-        },
-        data={
-            "auto_sync": "true",
-            "flight_time_roi_json": '{"id":"ft","label":"Flight Time","x":100,"y":50,"width":220,"height":48}',
-            "rois_json": "[]",
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["videoAnalysis"]["autoSync"]["status"] == "success"
-    assert body["videoAnalysis"]["anchorVideoSec"] == 0.0
-    assert body["videoAnalysis"]["anchorTlogSec"] == 285.0
-
-
-def test_auto_sync_failure_preserves_tlog_result(monkeypatch):
-    async def fake_analyze(file):
-        return _base_tlog_result()
-
-    monkeypatch.setattr(main, "analyze", fake_analyze)
-    import backend.video_analysis as va
-    monkeypatch.setattr(va, "probe_video", lambda path: {
-        "durationSec": 74.0, "width": 1920, "height": 1080, "fps": 30.0
-    })
-    monkeypatch.setattr(va, "run_flight_time_auto_sync", lambda *args, **kwargs: {
-        "status": "failed", "confidence": "low", "warnings": ["OCR failed"]
-    })
-
-    client = TestClient(main.app)
-    response = client.post(
-        "/analyze-video",
-        files={
-            "file": ("flight.tlog", b"tlog", "application/octet-stream"),
-            "video": ("clip.mp4", b"video", "video/mp4"),
-        },
-        data={
-            "auto_sync": "true",
-            "flight_time_roi_json": '{"id":"ft","label":"Flight Time","x":100,"y":50,"width":220,"height":48}',
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert body["videoAnalysis"]["autoSync"]["status"] == "failed"
+{
+    "status": "success", "confidence": "high", "selectedFlight": 4,
+    "armTlogSec": 185.397, "offsetSec": 470.397,
+    "videoAnchorSec": 0.0, "tlogAnchorSec": 470.397,
+    "samples": [], "offsetSpreadSec": 0.2, "candidates": [], "warnings": [],
+}
 ```
 
-Also extend `test_video_endpoint_works_from_render_backend_root()` so its embedded request still verifies the Render-root import path after the new dependency and optional form fields are added.
+Assert HTTP 200, `videoAnalysis.autoSync.status == "success"`, and both `videoAnalysis.anchor*Sec` fields equal the returned anchors. Add a second test where the helper returns `status="failed"`; assert `success is True` for the TLOG result and the failed structure remains in `videoAnalysis.autoSync`.
 
-- [ ] **Step 2: Run API tests RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
 pytest tests/test_video_analysis_api.py -v
 ```
 
-Expected: the new auto-sync request returns validation error 422 because manual anchors are still required, or fails because auto-sync fields/handler do not exist.
+Expected: new request fails because anchors are currently required.
 
-- [ ] **Step 3: Make endpoint form contract backward-compatible**
+- [ ] **Step 3: Replace the endpoint signature/import block**
 
-At `# VIDEO_TLOG_ANALYSIS_ENDPOINT_V1`, change the signature to:
+Use:
 
 ```python
 @app.post("/analyze-video")
@@ -829,26 +611,9 @@ async def analyze_video(
 ):
 ```
 
-Extend the existing Render-safe import block:
+Import `run_flight_time_auto_sync` in both the `backend.video_analysis` and Render-root fallback paths.
 
-```python
-try:
-    from backend.video_analysis import (
-        build_sample_times,
-        normalize_rois,
-        probe_video,
-        run_flight_time_auto_sync,
-    )
-except ImportError:
-    from video_analysis import (
-        build_sample_times,
-        normalize_rois,
-        probe_video,
-        run_flight_time_auto_sync,
-    )
-```
-
-Initialize anchors without converting `None`:
+Initialize:
 
 ```python
 video_result = {
@@ -856,29 +621,54 @@ video_result = {
     "videoDurationSec": None,
     "anchorVideoSec": float(video_anchor_sec) if video_anchor_sec is not None else None,
     "anchorTlogSec": float(tlog_anchor_sec) if tlog_anchor_sec is not None else None,
-    "rois": [],
-    "observations": [],
-    "correlations": [],
-    "warnings": [],
+    "rois": [], "observations": [], "correlations": [], "warnings": [],
     "autoSync": None,
 }
 ```
 
-After `metadata = probe_video(...)` and ROI normalization, preserve current manual validation only when both anchors are present. Then add the auto-sync branch:
+- [ ] **Step 4: Guard manual validation and add isolated auto-sync failure handling**
+
+After `metadata = probe_video(temp_video_path)` and `duration = ...`, replace unconditional anchor checks with:
+
+```python
+if video_anchor_sec is not None:
+    if not 0.0 <= float(video_anchor_sec) <= duration:
+        raise ValueError("Точка синхронізації відео виходить за межі ролика")
+
+timeline_times = []
+for row in tlog_result.get("timeline") or []:
+    if isinstance(row, dict):
+        t_ms = _timeline_graph_time_ms(row.get("time"))
+        if t_ms is not None:
+            timeline_times.append(t_ms / 1000.0)
+if tlog_anchor_sec is not None and timeline_times:
+    if not min(timeline_times) <= float(tlog_anchor_sec) <= max(timeline_times):
+        raise ValueError("Точка синхронізації TLOG виходить за межі журналу")
+```
+
+After normal ROI parsing, add:
 
 ```python
 if auto_sync:
-    if not flight_time_roi_json:
-        raise ValueError("Для автосинхронізації намалюй зону Flight Time")
-    flight_time_roi = json.loads(flight_time_roi_json)
-    if not isinstance(flight_time_roi, dict):
-        raise ValueError("Flight Time ROI must be a JSON object")
-    auto_result = run_flight_time_auto_sync(
-        temp_video_path,
-        metadata,
-        flight_time_roi,
-        (tlog_result.get("flight") or {}).get("flightSessions") or [],
-    )
+    try:
+        if not flight_time_roi_json:
+            raise ValueError("Для автосинхронізації намалюй зону Flight Time")
+        flight_time_roi = json.loads(flight_time_roi_json)
+        if not isinstance(flight_time_roi, dict):
+            raise ValueError("Flight Time ROI must be a JSON object")
+        auto_result = run_flight_time_auto_sync(
+            temp_video_path,
+            metadata,
+            flight_time_roi,
+            (tlog_result.get("flight") or {}).get("flightSessions") or [],
+        )
+    except Exception as exc:
+        auto_result = {
+            "status": "failed", "confidence": "low", "selectedFlight": None,
+            "armTlogSec": None, "offsetSec": None, "videoAnchorSec": None,
+            "tlogAnchorSec": None, "samples": [], "offsetSpreadSec": None,
+            "candidates": [], "warnings": [f"Автосинхронізація недоступна: {exc}"],
+        }
     video_result["autoSync"] = auto_result
     if auto_result.get("status") == "success" and auto_result.get("confidence") in {"high", "medium"}:
         video_result["anchorVideoSec"] = auto_result.get("videoAnchorSec")
@@ -887,138 +677,73 @@ elif video_anchor_sec is None or tlog_anchor_sec is None:
     video_result["warnings"].append("Для ручного відеоаналізу спочатку синхронізуй відео з TLOG")
 ```
 
-Do not remove the existing MP4/MOV checks, `probe_video`, `normalize_rois`, sample-count metadata, exception isolation, or temp-file cleanup.
+Keep the outer video exception handler and temp-file cleanup exactly as existing safety boundaries.
 
-- [ ] **Step 4: Run API + Render-root + core regression tests GREEN**
+- [ ] **Step 5: Run API/Render-root tests GREEN and commit**
 
 ```bash
 pytest tests/test_video_analysis_api.py tests/test_flight_time_auto_sync.py tests/test_video_analysis_core.py -v
 python -m py_compile backend/main.py backend/video_analysis.py
-```
-
-Expected: PASS and no syntax errors.
-
-- [ ] **Step 5: Commit API integration**
-
-```bash
 git add backend/main.py tests/test_video_analysis_api.py
 git commit -m "feat: expose Flight Time auto-sync in video API"
 ```
 
 ---
 
-### Task 5: Add auto-sync controls and reuse the existing manual anchor state
+### Task 5: Add frontend controls and reuse the existing anchor state
 
 **Files:**
-- Modify: `index.html` in the existing `VIDEO_TLOG_ROI_CONTROLS_V1`, `VIDEO_TLOG_SYNC_V1`, and video frontend JS sections.
+- Modify: `index.html` in `VIDEO_TLOG_ROI_CONTROLS_V1`, `VIDEO_TLOG_SYNC_V1`, and existing video JS.
 - Modify: `tests/test_video_analysis_frontend.py`
 
 **Interfaces:**
-- Consumes: `selectedFile`, `videoFile`, `videoRois`, `API_BASE_URL`, and existing `videoAnchorSec` / `tlogAnchorSec` / `updateVideoSyncPair()`.
-- Produces: `runFlightTimeAutoSync()`, `applyAutoSyncResult(autoSync)`, ambiguity chooser, status/confidence text, and the same anchor variables used by manual sync.
+- Consumes: `selectedFile`, `videoFile`, `videoRois`, `API_BASE_URL`, existing `videoAnchorSec`, `tlogAnchorSec`, `updateVideoSyncPair()`.
+- Produces: auto-sync request, confidence/status rendering, ambiguity selection, and writes only the existing anchor variables.
 
-- [ ] **Step 1: Add failing frontend-contract tests**
+- [ ] **Step 1: Add failing frontend contract**
 
-Update the exact ROI option expectation in `tests/test_video_analysis_frontend.py` to:
+Change the ROI option expectation to:
 
 ```python
 assert options == [
-    "Flight Time",
-    "Напруга АКБ",
-    "Ампераж",
-    "dBm",
-    "RSSI",
-    "VISP",
-    "Режим",
-    "Попередження",
-    "Інше",
+    "Flight Time", "Напруга АКБ", "Ампераж", "dBm", "RSSI", "VISP",
+    "Режим", "Попередження", "Інше",
 ]
 ```
 
-Add:
+Add assertions for IDs `videoAutoSync`, `videoAutoSyncStatus`, `videoAutoSyncConfidence`, `videoAutoSyncCandidate`, `videoAutoSyncApplyCandidate`, the text `Автосинхронізація по Flight Time`, request field `flight_time_roi_json`, and assignments from `autoSync.videoAnchorSec` / `autoSync.tlogAnchorSec` into existing state.
 
-```python
-def test_flight_time_auto_sync_controls_exist():
-    assert 'id="videoAutoSync"' in HTML
-    assert 'id="videoAutoSyncStatus"' in HTML
-    assert 'id="videoAutoSyncConfidence"' in HTML
-    assert 'id="videoAutoSyncCandidate"' in HTML
-    assert 'id="videoAutoSyncApplyCandidate"' in HTML
-    assert "Автосинхронізація по Flight Time" in HTML
-
-
-def test_auto_sync_posts_roi_and_reuses_manual_anchor_state():
-    assert "runFlightTimeAutoSync" in HTML
-    assert "flight_time_roi_json" in HTML
-    assert "formData.append('auto_sync','true')" in HTML or 'formData.append("auto_sync","true")' in HTML
-    assert "autoSync.videoAnchorSec" in HTML
-    assert "autoSync.tlogAnchorSec" in HTML
-    assert "videoAnchorSec=" in HTML
-    assert "tlogAnchorSec=" in HTML
-    assert "updateVideoSyncPair()" in HTML
-
-
-def test_low_confidence_does_not_overwrite_anchors():
-    assert "autoSync.confidence==='low'" in HTML or 'autoSync.confidence === "low"' in HTML
-    assert "status==='ambiguous'" in HTML or 'status === "ambiguous"' in HTML
-```
-
-- [ ] **Step 2: Run frontend contract RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
 pytest tests/test_video_analysis_frontend.py -v
 ```
 
-Expected: FAIL because `Flight Time` and auto-sync UI/JS are absent.
+Expected: FAIL because the controls and `Flight Time` option do not exist.
 
-- [ ] **Step 3: Add the `Flight Time` ROI and auto-sync UI**
+- [ ] **Step 3: Add HTML controls**
 
-Change the ROI `<select>` so `Flight Time` is the first option:
-
-```html
-<select id="videoRoiLabel" aria-label="Тип зони відео">
-  <option>Flight Time</option>
-  <option>Напруга АКБ</option>
-  <option>Ампераж</option>
-  <option>dBm</option>
-  <option>RSSI</option>
-  <option>VISP</option>
-  <option>Режим</option>
-  <option>Попередження</option>
-  <option>Інше</option>
-</select>
-```
-
-Extend `VIDEO_TLOG_SYNC_V1`:
+Make `Flight Time` the first ROI option. Extend the sync panel with:
 
 ```html
-<div class="video-sync-actions">
-  <button id="videoAutoSync" type="button">⚡ Автосинхронізація по Flight Time</button>
-  <button id="videoSetAnchor" type="button">⏱ Взяти поточний час відео</button>
-  <button id="tlogSelectAnchor" type="button">🎯 Вибрати момент TLOG</button>
-</div>
+<button id="videoAutoSync" type="button">⚡ Автосинхронізація по Flight Time</button>
 <div id="videoAutoSyncStatus">Автосинхронізація ще не запускалась.</div>
 <div id="videoAutoSyncConfidence" hidden></div>
 <div class="video-auto-sync-candidate-row" hidden>
   <select id="videoAutoSyncCandidate" aria-label="Політ для автосинхронізації"></select>
   <button id="videoAutoSyncApplyCandidate" type="button">Застосувати вибраний політ</button>
 </div>
-<div id="videoSyncPair">відео — ↔ TLOG —</div>
 ```
 
-Add the new elements to `VideoSyncUI`.
+Keep the two manual buttons and `videoSyncPair` visible.
 
-- [ ] **Step 4: Implement frontend auto-sync request and safe application**
+- [ ] **Step 4: Add frontend request/application logic**
 
-Add JS next to the existing manual sync code:
+Extend `VideoSyncUI` with the five new elements, then add:
 
 ```javascript
 function flightTimeRoi(){
   return videoRois.find(roi=>String(roi?.label||'')==='Flight Time')||null;
-}
-
-function autoSyncConfidenceLabel(value){
-  return value==='high'?'висока':value==='medium'?'середня':'низька';
 }
 
 function applyAutoSyncResult(autoSync){
@@ -1031,51 +756,10 @@ function applyAutoSyncResult(autoSync){
   return true;
 }
 
-function renderAutoSyncResult(autoSync){
-  if(!VideoSyncUI.autoStatus)return;
-  const candidateRow=VideoSyncUI.candidate?.closest('.video-auto-sync-candidate-row');
-  if(candidateRow)candidateRow.hidden=true;
-  if(VideoSyncUI.confidence)VideoSyncUI.confidence.hidden=true;
-
-  if(!autoSync){
-    VideoSyncUI.autoStatus.textContent='Автосинхронізація не повернула результат.';
-    return;
-  }
-  if(autoSync.status==='success'){
-    const sample=(autoSync.samples||[])[0]||{};
-    VideoSyncUI.autoStatus.textContent=`Flight Time ${sample.ocrText||'—'} → Політ №${autoSync.selectedFlight} → зсув ${Number(autoSync.offsetSec||0).toFixed(3)} с`;
-    if(VideoSyncUI.confidence){
-      VideoSyncUI.confidence.hidden=false;
-      VideoSyncUI.confidence.textContent=`Впевненість: ${autoSyncConfidenceLabel(autoSync.confidence)}`;
-    }
-    applyAutoSyncResult(autoSync);
-    return;
-  }
-  if(autoSync.status==='ambiguous'){
-    VideoSyncUI.autoStatus.textContent='Знайдено кілька правдоподібних польотів. Обери потрібний.';
-    if(VideoSyncUI.candidate){
-      VideoSyncUI.candidate.innerHTML=(autoSync.candidates||[]).map(item=>
-        `<option value="${Number(item.number)}" data-offset="${Number(item.offsetSec)}">Політ №${Number(item.number)} • ${Number(item.durationSec).toFixed(1)} с</option>`
-      ).join('');
-      if(candidateRow)candidateRow.hidden=false;
-    }
-    return;
-  }
-  VideoSyncUI.autoStatus.textContent=(autoSync.warnings||[])[0]||'Не вдалося стабільно прочитати Flight Time.';
-}
-
 async function runFlightTimeAutoSync(){
-  if(!selectedFile||!videoFile){
-    UI.error.textContent='❌ Спочатку обери TLOG і відео';
-    UI.error.style.display='block';
-    return;
-  }
+  if(!selectedFile||!videoFile)throw new Error('Спочатку обери TLOG і відео');
   const roi=flightTimeRoi();
-  if(!roi){
-    UI.error.textContent='❌ Намалюй зону Flight Time на відео';
-    UI.error.style.display='block';
-    return;
-  }
+  if(!roi)throw new Error('Намалюй зону Flight Time на відео');
   VideoSyncUI.autoStatus.textContent='Читаю Flight Time на кількох кадрах…';
   const formData=new FormData();
   formData.append('file',selectedFile,selectedFile.name);
@@ -1089,45 +773,30 @@ async function runFlightTimeAutoSync(){
   window.__lastAnalysisResult=data;
   renderVideoAnalysisSection(data);
   renderAutoSyncResult(data?.videoAnalysis?.autoSync||null);
-  UI.error.style.display='none';
 }
-
-VideoSyncUI.autoSync?.addEventListener('click',()=>{
-  runFlightTimeAutoSync().catch(error=>{
-    UI.error.textContent=`❌ Автосинхронізація: ${error.message||error}`;
-    UI.error.style.display='block';
-  });
-});
-
-VideoSyncUI.applyCandidate?.addEventListener('click',()=>{
-  const option=VideoSyncUI.candidate?.selectedOptions?.[0];
-  const offset=Number(option?.dataset?.offset);
-  if(!Number.isFinite(offset))return;
-  videoAnchorSec=0;
-  tlogAnchorSec=offset;
-  updateVideoSyncPair();
-  if(VideoSyncUI.autoStatus)VideoSyncUI.autoStatus.textContent=`Застосовано ${option.textContent}`;
-});
 ```
 
-Extend `VideoSyncUI` exactly:
+`renderAutoSyncResult()` must implement exactly these branches:
 
 ```javascript
-const VideoSyncUI={
-  autoSync:document.getElementById('videoAutoSync'),
-  autoStatus:document.getElementById('videoAutoSyncStatus'),
-  confidence:document.getElementById('videoAutoSyncConfidence'),
-  candidate:document.getElementById('videoAutoSyncCandidate'),
-  applyCandidate:document.getElementById('videoAutoSyncApplyCandidate'),
-  videoAnchor:document.getElementById('videoSetAnchor'),
-  tlogAnchor:document.getElementById('tlogSelectAnchor'),
-  pair:document.getElementById('videoSyncPair')
-};
+if(autoSync?.status==='success'){
+  applyAutoSyncResult(autoSync);
+}else if(autoSync?.status==='ambiguous'){
+  // Populate candidate select from autoSync.candidates; do not touch anchors.
+}else{
+  // Show first warning; do not touch anchors.
+}
 ```
 
-- [ ] **Step 5: Run frontend contract and embedded JS syntax GREEN**
+Candidate application must read `data-offset` from the selected candidate and only then set:
 
-Run:
+```javascript
+videoAnchorSec=0;
+tlogAnchorSec=offset;
+updateVideoSyncPair();
+```
+
+- [ ] **Step 5: Run frontend contract + JS syntax GREEN and commit**
 
 ```bash
 pytest tests/test_video_analysis_frontend.py -v
@@ -1141,31 +810,23 @@ with tempfile.NamedTemporaryFile('w',suffix='.js',delete=False,encoding='utf-8')
     name=f.name
 subprocess.run(['node','--check',name],check=True)
 PY
-```
-
-Expected: PASS and `node --check` exits 0.
-
-- [ ] **Step 6: Commit frontend integration**
-
-```bash
 git add index.html tests/test_video_analysis_frontend.py
 git commit -m "feat: add Flight Time auto-sync controls"
 ```
 
 ---
 
-### Task 6: Add real-sample validation hook and complete regression verification
+### Task 6: Add deterministic real-sample validation and CI coverage
 
 **Files:**
 - Create: `tools/validate_flight_time_auto_sync.py`
-- Modify: `.github/workflows/video-tlog-analysis.yml` only if the current workflow does not already run `tests/test_flight_time_auto_sync.py` through its video-test glob/list.
-- Test: real user-provided files remain outside git.
+- Modify: `.github/workflows/video-tlog-analysis.yml`
 
 **Interfaces:**
-- Consumes: `TLOG_PATH`, `VIDEO_PATH`, and a JSON Flight Time ROI supplied on the command line; never assumes the user's filenames.
-- Produces: a concise JSON diagnostic showing OCR samples, confidence, selected session, offset, and warnings.
+- Validation tool consumes an arbitrary TLOG, arbitrary video, and explicit ROI JSON; it obtains `flightSessions` by calling the production `/analyze` path, then calls the same `run_flight_time_auto_sync()` used in production.
+- CI installs `backend/requirements.txt` and runs the new test file; real uploaded media stays outside git.
 
-- [ ] **Step 1: Add a validation utility that exercises the same production helpers**
+- [ ] **Step 1: Create a production-path validation utility**
 
 Create `tools/validate_flight_time_auto_sync.py`:
 
@@ -1173,47 +834,30 @@ Create `tools/validate_flight_time_auto_sync.py`:
 import argparse
 import json
 from pathlib import Path
-
-from backend.main import analyze_flight_sessions
+from fastapi.testclient import TestClient
+import backend.main as backend_main
 from backend.video_analysis import probe_video, run_flight_time_auto_sync
-from pymavlink import mavutil
-
-
-def read_arm_sessions_from_tlog(path):
-    raw_timeline=[]
-    mav=mavutil.mavlink_connection(str(path),robust_parsing=True)
-    last_ts=None
-    while True:
-        msg=mav.recv_match(blocking=False)
-        if msg is None:
-            break
-        ts=getattr(msg,'_timestamp',None)
-        if ts is None:
-            continue
-        last_ts=float(ts)
-        msg_type=msg.get_type()
-        if msg_type=='STATUSTEXT':
-            text=str(getattr(msg,'text','') or '')
-            raw_timeline.append({'timestamp':last_ts,'system_text':text})
-        elif msg_type=='HEARTBEAT':
-            base_mode=int(getattr(msg,'base_mode',0) or 0)
-            armed=bool(base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-            raw_timeline.append({
-                'timestamp':last_ts,
-                'system_text':'🟢 Двигуни запущено' if armed else '🔴 Двигуни зупинено',
-            })
-    return analyze_flight_sessions(raw_timeline,last_ts)
 
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('tlog',type=Path)
     parser.add_argument('video',type=Path)
-    parser.add_argument('--roi',required=True,help='JSON object with x,y,width,height,label')
+    parser.add_argument('--roi',required=True)
     args=parser.parse_args()
+
+    client=TestClient(backend_main.app)
+    with args.tlog.open('rb') as handle:
+        response=client.post('/analyze',files={
+            'file':(args.tlog.name,handle,'application/octet-stream')
+        })
+    response.raise_for_status()
+    tlog_result=response.json()
+    sessions=(tlog_result.get('flight') or {}).get('flightSessions') or []
     metadata=probe_video(args.video)
-    sessions=read_arm_sessions_from_tlog(args.tlog)
-    result=run_flight_time_auto_sync(args.video,metadata,json.loads(args.roi),sessions)
+    result=run_flight_time_auto_sync(
+        args.video, metadata, json.loads(args.roi), sessions
+    )
     print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
@@ -1221,80 +865,89 @@ if __name__=='__main__':
     main()
 ```
 
-During implementation, if direct `analyze_flight_sessions()` requires richer timeline row fields than this lightweight utility supplies, replace `read_arm_sessions_from_tlog()` with a call through the production FastAPI/TestClient path rather than duplicating analyzer logic. The acceptance criterion is that the utility must call the same `run_flight_time_auto_sync()` used in production; it must not contain special-case timing values.
+- [ ] **Step 2: Update CI exactly**
 
-- [ ] **Step 2: Run the production test suite before real-file validation**
+In `.github/workflows/video-tlog-analysis.yml`:
+
+1. Change push branches to:
+
+```yaml
+branches: [feature/video-tlog-analysis, feature/flight-time-auto-sync]
+```
+
+2. Add these paths to both `push.paths` and `pull_request.paths`:
+
+```yaml
+- 'tests/test_flight_time_auto_sync.py'
+- 'tools/validate_flight_time_auto_sync.py'
+```
+
+3. Add `tests/test_flight_time_auto_sync.py` to `Run video TLOG tests`:
+
+```yaml
+python -m pytest \
+  tests/test_video_analysis_core.py \
+  tests/test_video_analysis_api.py \
+  tests/test_video_analysis_frontend.py \
+  tests/test_flight_time_auto_sync.py \
+  -v
+```
+
+4. Extend syntax check to:
+
+```yaml
+run: python -m py_compile backend/main.py backend/video_analysis.py tools/validate_flight_time_auto_sync.py
+```
+
+- [ ] **Step 3: Run target tests and real sample**
+
+The supplied video is 848×530. The visible Flight Time block in the supplied frame is covered by validation ROI `x=390, y=438, width=110, height=37`. Use that only for this local validation command:
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py tests/test_video_analysis_core.py tests/test_video_analysis_api.py tests/test_video_analysis_frontend.py -v
-python -m py_compile backend/main.py backend/video_analysis.py tools/validate_flight_time_auto_sync.py
+python tools/validate_flight_time_auto_sync.py \
+  "/mnt/data/47 2026-09-14 11-49-46(1).tlog" \
+  "/mnt/data/WhatsApp Video 2026-09-14 at 12.00.00.mp4" \
+  --roi '{"id":"sample-flight-time","label":"Flight Time","x":390,"y":438,"width":110,"height":37}'
+```
+
+Expected real-sample evidence:
+
+- OCR readings progress approximately from `00:04:45` toward `00:05:59`;
+- flights 1–3 are rejected because their ~10 s durations cannot contain a 4–6 minute Flight Time;
+- flight 4 is selected;
+- `offsetSpreadSec <= 2.0` is required for automatic anchor application;
+- if OCR spread is larger, result must be Low/failed rather than a guessed anchor.
+
+- [ ] **Step 4: Run the workflow's existing high-value regressions**
+
+```bash
+python -m pytest \
+  tests/test_report_export.py \
+  tests/test_report_export_full.py \
+  tests/test_report_export_runtime_vtx.py \
+  tests/test_ai_reconstruction.py \
+  tests/test_ai_reconstruction_frontend_contract.py \
+  tests/test_ai_reconstruction_integration.py \
+  tests/test_vtx_frequency_matrix.py \
+  tests/test_board_messages_complete_list.py \
+  tests/test_graph_board_statustext_clickable.py \
+  tests/test_statustext_severity_passthrough.py \
+  tests/test_map_default_flight.py \
+  tests/test_frontend_flow.py \
+  -v
 ```
 
 Expected: PASS.
 
-- [ ] **Step 3: Validate on the uploaded real pair using a user-drawn Flight Time ROI**
-
-In the active environment, run the utility with the uploaded files and the ROI copied from the UI. Example invocation shape:
-
-```bash
-python tools/validate_flight_time_auto_sync.py \
-  "/mnt/data/47 2026-09-14 11-49-46(1).tlog" \
-  "/mnt/data/WhatsApp Video 2026-09-14 at 12.00.00.mp4" \
-  --roi '{"id":"flight-time","label":"Flight Time","x":X,"y":Y,"width":W,"height":H}'
-```
-
-Before running, replace `X/Y/W/H` with the actual ROI exported by the UI; do not commit those sample-specific coordinates. Expected evidence:
-
-- recognized samples increase from approximately `00:04:45` toward `00:05:59` over the clip;
-- early ~10-second sessions are excluded by the session-duration check;
-- the long fourth session is selected if it is the only or clearly dominant plausible session;
-- `offsetSpreadSec <= 2.0` for an auto-applied result;
-- any larger spread produces Low confidence and no anchor application.
-
-- [ ] **Step 4: Run high-value existing regressions**
-
-Run the existing regression set used by `Video TLOG analysis CI`, including at minimum:
-
-```bash
-pytest \
-  tests/test_ai_reconstruction.py \
-  tests/test_ai_reconstruction_frontend_contract.py \
-  tests/test_board_messages_complete_list.py \
-  tests/test_dashboard_summary_vtx_engine.py \
-  tests/test_map_default_flight.py \
-  tests/test_report_export.py \
-  tests/test_video_analysis_core.py \
-  tests/test_video_analysis_api.py \
-  tests/test_video_analysis_frontend.py \
-  tests/test_flight_time_auto_sync.py -v
-```
-
-If one of these exact filenames has changed in the branch, use the current equivalent already referenced by `.github/workflows/video-tlog-analysis.yml`; do not silently drop the regression category.
-
-- [ ] **Step 5: Ensure CI installs OCR and runs the new tests**
-
-Verify `.github/workflows/video-tlog-analysis.yml` installs `backend/requirements.txt`. If it already does, only add `tests/test_flight_time_auto_sync.py` to the video test command. The test step should include:
-
-```yaml
-- name: Run video TLOG tests
-  run: |
-    pytest \
-      tests/test_video_analysis_core.py \
-      tests/test_video_analysis_api.py \
-      tests/test_video_analysis_frontend.py \
-      tests/test_flight_time_auto_sync.py -v
-```
-
-Do not add the real 8 MB video or 3 MB TLOG to git or CI artifacts.
-
-- [ ] **Step 6: Commit validation/CI changes**
+- [ ] **Step 5: Commit CI/validation changes**
 
 ```bash
 git add tools/validate_flight_time_auto_sync.py .github/workflows/video-tlog-analysis.yml
 git commit -m "test: validate Flight Time auto-sync pipeline"
 ```
 
-- [ ] **Step 7: Final verification before PR**
+- [ ] **Step 6: Final verification before PR**
 
 ```bash
 pytest tests/test_flight_time_auto_sync.py tests/test_video_analysis_core.py tests/test_video_analysis_api.py tests/test_video_analysis_frontend.py -v
@@ -1303,9 +956,4 @@ git status --short
 git log --oneline --max-count=8
 ```
 
-Expected:
-
-- all targeted tests PASS;
-- syntax checks PASS;
-- no uncommitted production/test files remain;
-- `main` is untouched until the feature PR is explicitly merged.
+Expected: targeted tests and syntax checks PASS, working tree is clean, and `main` has not moved because implementation remains in `feature/flight-time-auto-sync` until explicit merge approval.
