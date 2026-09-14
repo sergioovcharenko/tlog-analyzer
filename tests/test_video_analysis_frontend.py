@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 
-
+# HOTFIX_VERIFICATION_V1
 HTML = Path("index.html").read_text(encoding="utf-8")
 
 
