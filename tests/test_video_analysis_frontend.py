@@ -40,3 +40,20 @@ def test_roi_editor_converts_display_pixels_to_source_pixels():
     assert "pointerdown" in HTML
     assert "pointermove" in HTML
     assert "pointerup" in HTML
+
+
+def test_manual_partial_clip_sync_controls_exist():
+    assert 'id="videoSetAnchor"' in HTML
+    assert 'id="tlogSelectAnchor"' in HTML
+    assert 'id="videoSyncPair"' in HTML
+    assert "Взяти поточний час відео" in HTML
+    assert "Вибрати момент TLOG" in HTML
+    assert "відео" in HTML and "TLOG" in HTML
+
+
+def test_manual_sync_uses_video_current_time_and_timeline_row_time():
+    assert "currentTime" in HTML
+    assert "timelineSeconds" in HTML
+    assert "video_anchor_sec" in HTML
+    assert "tlog_anchor_sec" in HTML
+    assert "awaitingTlogAnchor" in HTML
