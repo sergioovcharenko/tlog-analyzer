@@ -34,6 +34,7 @@ def test_roi_editor_controls_and_labels_exist():
     assert match, "video ROI label select not found"
     options = re.findall(r'<option>(.*?)</option>', match.group(1), re.S)
     assert options == [
+        "Flight Time",
         "Напруга АКБ",
         "Ампераж",
         "dBm",
@@ -70,6 +71,28 @@ def test_manual_sync_uses_video_current_time_and_timeline_row_time():
     assert "video_anchor_sec" in HTML
     assert "tlog_anchor_sec" in HTML
     assert "awaitingTlogAnchor" in HTML
+
+
+def test_flight_time_auto_sync_controls_exist():
+    assert 'id="videoAutoSync"' in HTML
+    assert 'id="videoAutoSyncStatus"' in HTML
+    assert 'id="videoAutoSyncConfidence"' in HTML
+    assert 'id="videoAutoSyncCandidate"' in HTML
+    assert 'id="videoAutoSyncApplyCandidate"' in HTML
+    assert "Автосинхронізація по Flight Time" in HTML
+
+
+def test_flight_time_auto_sync_reuses_existing_anchor_state():
+    assert "flight_time_roi_json" in HTML
+    assert "auto_sync" in HTML
+    assert "runFlightTimeAutoSync" in HTML
+    assert "applyAutoSyncResult" in HTML
+    assert "autoSync.videoAnchorSec" in HTML
+    assert "autoSync.tlogAnchorSec" in HTML
+    assert "videoAnchorSec=va" in HTML or "videoAnchorSec = va" in HTML
+    assert "tlogAnchorSec=ta" in HTML or "tlogAnchorSec = ta" in HTML
+    assert "videoAnchorSec=0" in HTML or "videoAnchorSec = 0" in HTML
+    assert "tlogAnchorSec=offset" in HTML or "tlogAnchorSec = offset" in HTML
 
 
 def test_combined_video_tlog_results_section_exists():
