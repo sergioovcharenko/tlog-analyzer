@@ -53,6 +53,12 @@ try:
 except ImportError:
     from raw_vfr import build_raw_vfr_hud_series_from_reader
 
+# AI_EXPERT_IMPORT_V1
+try:
+    from backend.ai_expert import build_ai_expert_analysis
+except ImportError:
+    from ai_expert import build_ai_expert_analysis
+
 app = FastAPI()
 
 # GitHub Pages frontend is served from another origin.
@@ -5067,6 +5073,74 @@ async def analyze(file: UploadFile = File(...)):
         ai_reconstruction = augment_ai_reconstruction_with_prearm_diagnostics(
             ai_reconstruction, timeline
         )
+
+        # AI_EXPERT_BACKEND_V1
+        ai_expert = None
+        ai_expert_warning = None
+        try:
+            _expert_radio_events = []
+            for _ep in communication_loss_episodes:
+                _start = _ep.get("startTimestamp")
+                if not valid_number(_start):
+                    continue
+                _expert_radio_events.append({
+                    "time_s": float(_start) - float(base_t),
+                    "dbm": _ep.get("startDbm"),
+                    "recovered": bool(_ep.get("recovered")),
+                    "vtx_changed": bool(_ep.get("vtxChangedAcrossBlindZone")),
+                })
+
+            # RADIO/GCS failsafe is a separate evidence class from a raw MAVLink gap.
+            for _row in timeline:
+                if not isinstance(_row, dict):
+                    continue
+                _text = str(_row.get("systemText") or _row.get("system_text") or "").strip()
+                _lower = _text.lower()
+                if "failsafe" not in _lower or not ("radio" in _lower or "gcs" in _lower):
+                    continue
+                _t_ms = _timeline_graph_time_ms(_row.get("time"))
+                if _t_ms is None:
+                    continue
+                _expert_radio_events.append({
+                    "time_s": float(_t_ms) / 1000.0,
+                    "type": "failsafe",
+                    "text": _text,
+                })
+
+            _expert_thrust_events = []
+            for _event in potential_thrust_loss_events:
+                _ts = _event.get("timestamp")
+                if not valid_number(_ts):
+                    continue
+                _expert_thrust_events.append({
+                    "time_s": float(_ts) - float(base_t),
+                    "text": _event.get("text") or "Potential Thrust Loss",
+                    "motors": _event.get("motors"),
+                    "mode": _event.get("mode"),
+                })
+
+            _expert_rpm_events = []
+            for _event in rpm_drop_events:
+                _ts = _event.get("timestamp")
+                if not valid_number(_ts):
+                    continue
+                _expert_rpm_events.append({
+                    "time_s": float(_ts) - float(base_t),
+                    "differencePct": _event.get("differencePct"),
+                    "lowerMotor": _event.get("lowerMotor"),
+                    "higherMotor": _event.get("higherMotor"),
+                    "type": "rpm_drop",
+                    "drop": True,
+                })
+
+            ai_expert = build_ai_expert_analysis(
+                timeline=timeline,
+                radio_events=_expert_radio_events,
+                thrust_events=_expert_thrust_events,
+                rpm_events=_expert_rpm_events,
+            )
+        except Exception as exc:
+            ai_expert_warning = f"Експертний AI-аналіз недоступний: {exc}"
         _perf["ai_ms"] = round((time.perf_counter() - _perf_ai_start) * 1000.0, 1)
 
         _perf_graphs_start = time.perf_counter()
@@ -5129,6 +5203,8 @@ async def analyze(file: UploadFile = File(...)):
             "graph_data": graph_data,
             "board_messages": board_messages,
             "ai_reconstruction": ai_reconstruction,
+            "ai_expert": ai_expert,
+            "ai_expert_warning": ai_expert_warning,
             "ai": {
                 "verdict": ai_verdict,
                 "isCritical": is_critical,

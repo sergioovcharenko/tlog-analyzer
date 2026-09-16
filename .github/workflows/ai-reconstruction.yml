@@ -1,27 +1,47 @@
+# Final verification for the committed AI expert branch state.
 name: AI reconstruction
 
 on:
   push:
     branches:
       - feature/ai-reconstruction-summary
+      - feature/ai-flight-expert-analyzer
     paths:
       - backend/ai_reconstruction.py
+      - backend/ai_expert.py
+      - backend/ai_expert_sessions.py
+      - backend/ai_expert_modules.py
       - backend/main.py
       - index.html
       - tests/test_ai_reconstruction.py
       - tests/test_ai_reconstruction_integration.py
       - tests/test_ai_reconstruction_frontend_contract.py
+      - tests/test_ai_expert.py
+      - tests/test_ai_expert_sessions.py
+      - tests/test_ai_expert_modules.py
+      - tests/test_ai_expert_integration.py
+      - tests/test_ai_expert_frontend_contract.py
       - tools/apply_ai_reconstruction.py
+      - tools/apply_ai_expert.py
       - .github/workflows/ai-reconstruction.yml
   pull_request:
     paths:
       - backend/ai_reconstruction.py
+      - backend/ai_expert.py
+      - backend/ai_expert_sessions.py
+      - backend/ai_expert_modules.py
       - backend/main.py
       - index.html
       - tests/test_ai_reconstruction.py
       - tests/test_ai_reconstruction_integration.py
       - tests/test_ai_reconstruction_frontend_contract.py
+      - tests/test_ai_expert.py
+      - tests/test_ai_expert_sessions.py
+      - tests/test_ai_expert_modules.py
+      - tests/test_ai_expert_integration.py
+      - tests/test_ai_expert_frontend_contract.py
       - tools/apply_ai_reconstruction.py
+      - tools/apply_ai_expert.py
       - .github/workflows/ai-reconstruction.yml
 
 permissions:
@@ -41,17 +61,25 @@ jobs:
         run: pip install -r backend/requirements.txt
       - name: Apply AI reconstruction integration
         run: python tools/apply_ai_reconstruction.py
+      - name: Apply AI flight expert integration
+        run: python tools/apply_ai_expert.py
       - name: Run AI reconstruction unit tests
         run: python -m unittest tests.test_ai_reconstruction -v
       - name: Run AI reconstruction integration tests
         run: python -m unittest tests.test_ai_reconstruction_integration -v
       - name: Run AI reconstruction frontend contract
         run: python -m unittest tests.test_ai_reconstruction_frontend_contract -v
+      - name: Run AI flight expert tests
+        run: python -m unittest discover -s tests -p 'test_ai_expert*.py' -v
       - name: Run full regression suite (legacy diagnostic)
         continue-on-error: true
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Compile backend
-        run: python -m py_compile backend/main.py backend/ai_reconstruction.py
+        run: |
+          python -m py_compile backend/main.py backend/ai_reconstruction.py
+          for f in backend/ai_expert.py backend/ai_expert_sessions.py backend/ai_expert_modules.py; do
+            if [ -f "$f" ]; then python -m py_compile "$f"; fi
+          done
       - name: Check inline JavaScript syntax
         run: |
           python - <<'PY'
@@ -62,16 +90,29 @@ jobs:
           Path('/tmp/tlog-inline.js').write_text('\n'.join(scripts),encoding='utf-8')
           PY
           node --check /tmp/tlog-inline.js
-      - name: Commit generated integration
-        if: github.event_name == 'push'
+      - name: Commit generated reconstruction integration
+        if: github.event_name == 'push' && github.ref_name == 'feature/ai-reconstruction-summary'
         run: |
           if git diff --quiet -- backend/main.py index.html; then
-            echo "No generated integration changes"
+            echo "No generated reconstruction integration changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/main.py index.html
           git commit -m "feat: integrate AI reconstruction summary"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+      - name: Commit generated expert integration
+        if: github.event_name == 'push' && github.ref_name == 'feature/ai-flight-expert-analyzer'
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo "No generated expert integration changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/main.py index.html
+          git commit -m "feat: integrate AI flight expert analyzer"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
