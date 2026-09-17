@@ -68,7 +68,15 @@ class AIExpertTest(unittest.TestCase):
             {"time": "00:20.000", "eventType": "FLIGHT_SESSION_END", "mode": "LOITER", "alt": 0.0, "dist": 109.0},
         ]
         rpm_events = [
-            {"time_s": 8.0, "differencePct": 48.5, "drop": True, "type": "rpm_drop", "text": "RPM drop motor 4"},
+            {
+                "time_s": 8.0,
+                "differencePct": 48.5,
+                "drop": True,
+                "type": "rpm_drop",
+                "lowerMotor": 4,
+                "higherMotor": 3,
+                "text": "RPM drop motor 4",
+            },
         ]
         result = build_ai_expert_analysis(
             timeline=timeline,
@@ -82,6 +90,7 @@ class AIExpertTest(unittest.TestCase):
         self.assertIn("rpm", conclusion)
         self.assertIn("48.5%", session["short_conclusion"])
         self.assertIn("падіння rpm", conclusion)
+        self.assertIn("motor 4", conclusion)
         self.assertIn("причин", conclusion)
 
 
