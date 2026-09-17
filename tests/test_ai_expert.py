@@ -93,6 +93,21 @@ class AIExpertTest(unittest.TestCase):
         self.assertIn("motor 4", conclusion)
         self.assertIn("причин", conclusion)
 
+    def test_combined_conclusion_separates_propulsion_and_loiter_into_paragraphs(self):
+        timeline = [
+            {"time": "00:00.000", "eventType": "FLIGHT_SESSION_START", "mode": "LOITER", "alt": 1.0, "dist": 0.0},
+            {"time": "00:05.000", "eventType": "SNAPSHOT", "mode": "LOITER", "alt": 9.4, "dist": 17.1, "groundSpeed": 4.0},
+            {"time": "00:20.000", "eventType": "FLIGHT_SESSION_END", "mode": "LOITER", "alt": 0.0, "dist": 17.1},
+        ]
+        rpm_events = [
+            {"time_s": 8.0, "differencePct": 100.0, "drop": True, "type": "rpm_drop", "lowerMotor": 4, "higherMotor": 3},
+        ]
+        result = build_ai_expert_analysis(timeline=timeline, radio_events=[], thrust_events=[], rpm_events=rpm_events)
+        conclusion = result["sessions"][0]["short_conclusion"]
+        self.assertIn("\n\nESC / RPM / тяга:", conclusion)
+        self.assertIn("\n\nКерування / режими:", conclusion)
+        self.assertLess(conclusion.index("ESC / RPM / тяга:"), conclusion.index("Керування / режими:"))
+
 
 if __name__ == "__main__":
     unittest.main()
