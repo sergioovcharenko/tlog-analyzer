@@ -7,6 +7,7 @@ on:
       - feature/ai-reconstruction-summary
       - feature/ai-flight-expert-analyzer
       - feature/ai-expert-timeline-jumps
+      - feature/timeline-full-width-tight-columns
     paths:
       - backend/ai_reconstruction.py
       - backend/ai_expert.py
@@ -25,6 +26,7 @@ on:
       - tools/apply_ai_reconstruction.py
       - tools/apply_ai_expert.py
       - tools/apply_ai_expert_timeline_jumps.py
+      - tools/apply_timeline_full_width.py
       - .github/workflows/ai-reconstruction.yml
   pull_request:
     paths:
@@ -45,6 +47,7 @@ on:
       - tools/apply_ai_reconstruction.py
       - tools/apply_ai_expert.py
       - tools/apply_ai_expert_timeline_jumps.py
+      - tools/apply_timeline_full_width.py
       - .github/workflows/ai-reconstruction.yml
 
 permissions:
@@ -68,6 +71,8 @@ jobs:
         run: python tools/apply_ai_expert.py
       - name: Apply AI expert timeline jumps
         run: python tools/apply_ai_expert_timeline_jumps.py
+      - name: Apply Timeline full-width layout
+        run: python tools/apply_timeline_full_width.py
       - name: Run AI reconstruction unit tests
         run: python -m unittest tests.test_ai_reconstruction -v
       - name: Run AI reconstruction integration tests
@@ -132,5 +137,18 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
           git commit -m "feat: enable AI expert timeline jumps"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+      - name: Commit generated Timeline full-width layout
+        if: github.event_name == 'push' && github.ref_name == 'feature/timeline-full-width-tight-columns'
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No generated Timeline layout changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "ui: expand Timeline and tighten columns"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
