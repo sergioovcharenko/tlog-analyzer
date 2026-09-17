@@ -1,0 +1,30 @@
+name: Analysis start UI cleanup
+
+on:
+  push:
+    branches: [fix/remove-analysis-overlay-and-simplify-title]
+    paths:
+      - 'index.html'
+      - 'tests/test_analysis_start_ui.py'
+      - '.github/workflows/analysis-start-ui.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run analysis start UI contract
+        run: python -m unittest tests.test_analysis_start_ui -v
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,flags=re.S|re.I)
+          Path('/tmp/app.js').write_text('\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/app.js
