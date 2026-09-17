@@ -34,6 +34,12 @@ class AIExpertFrontendContractTest(unittest.TestCase):
         self.assertIn("ai-expert-session", HTML)
         self.assertIn("details.open", HTML)
 
+    def test_expert_chronology_rows_jump_to_timeline(self):
+        self.assertIn("function bindAiExpertTimelineJumps()", HTML)
+        self.assertIn("li.dataset.jumpTime", HTML)
+        self.assertIn("title='Перейти до рядка Timeline'", HTML)
+        self.assertIn("bindAiExpertTimelineJumps();", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()
