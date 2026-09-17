@@ -10,10 +10,47 @@ on:
       - 'tests/test_expert_summary_spacing.py'
       - 'tools/apply_expert_summary_spacing.py'
 
+permissions:
+  contents: write
+
 jobs:
   contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply summary spacing patch
+        run: python tools/apply_expert_summary_spacing.py
       - name: Run expert summary spacing contract
         run: python -m pytest tests/test_expert_summary_spacing.py -q
+      - name: Run AI expert regression tests
+        run: python -m pytest tests/test_ai_expert.py tests/test_ai_expert_modules.py tests/test_ai_expert_integration.py tests/test_ai_expert_sessions.py -q
+      - name: Compile Python
+        run: python -m py_compile backend/ai_expert.py backend/ai_expert_modules.py backend/ai_expert_sessions.py
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          starts=[]
+          pos=0
+          while True:
+              a=s.find('<script>',pos)
+              if a<0: break
+              b=s.find('</script>',a)
+              if b<0: raise SystemExit('unterminated script')
+              starts.append(s[a+8:b])
+              pos=b+9
+          Path('/tmp/app.js').write_text('\n'.join(starts),encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+      - name: Commit patched summary layout
+        run: |
+          if git diff --quiet -- backend/ai_expert.py index.html; then
+            echo 'No summary layout changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/ai_expert.py index.html
+          git commit -m 'ui: separate propulsion and LOITER summary paragraphs'
+          git push
