@@ -194,38 +194,114 @@ def _build_checks(subsystems: dict[str, dict[str, Any]]) -> list[str]:
     return checks
 
 
+def _enrich_propulsion_motor_identity(module: dict[str, Any], rpm_events) -> None:
+    candidates = []
+    for event in rpm_events or []:
+        if not isinstance(event, dict):
+            continue
+        motor = event.get("lowerMotor")
+        if motor is None:
+            continue
+        try:
+            pct = float(event.get("differencePct") or event.get("asymmetry_pct") or 0.0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        candidates.append((pct, motor))
+    if not candidates:
+        return
+
+    pct, motor = max(candidates, key=lambda item: item[0])
+    try:
+        motor_label = str(int(float(motor)))
+    except (TypeError, ValueError):
+        motor_label = str(motor)
+    drop_count = sum(
+        1
+        for event in rpm_events or []
+        if isinstance(event, dict)
+        and (event.get("drop") or str(event.get("type") or "").lower() in {"rpm_drop", "drop"})
+    )
+    details = f"Motor {motor_label}: зафіксовано нижчі RPM відносно парного мотора"
+    if pct > 0:
+        details += f"; максимальна асиметрія RPM {pct:.1f}%"
+    if drop_count:
+        details += f"; зафіксовано {drop_count} подій падіння RPM"
+    details += "."
+
+    evidence = list(module.get("evidence") or [])
+    if details not in evidence:
+        evidence.insert(0, details)
+    module["evidence"] = evidence
+    module["focus_motor"] = motor_label
+
+
 def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, Any]]) -> str:
+    affected = _affected_names(subsystems)
+    if not affected:
+        if session.get("classification") == "arm_check":
+            return "Коротка ARM-перевірка; критичних відхилень у доступних даних не виявлено."
+        return "У цій ARM-сесії підтверджених критичних відхилень за доступними даними не виявлено."
+
     control = subsystems.get("control") or {}
     control_sources = set(control.get("source_classes") or [])
     loiter_sources = {"loiter_vertical_takeoff", "loiter_vertical_landing", "loiter_altitude_range"}
-    if control_sources.intersection(loiter_sources):
+    has_loiter_issue = bool(control_sources.intersection(loiter_sources))
+    propulsion = subsystems.get("propulsion") or {}
+    has_propulsion_issue = propulsion.get("status") in {"confirmed_problem", "probable_problem"}
+
+    special_parts: list[str] = []
+    if has_propulsion_issue:
+        propulsion_evidence = [str(text).strip() for text in (propulsion.get("evidence") or []) if str(text).strip()]
+        if propulsion_evidence:
+            special_parts.append("ESC / RPM / тяга: " + " ".join(propulsion_evidence[:3]))
+        else:
+            special_parts.append("ESC / RPM / тяга: зафіксовано ознаки проблеми силової установки.")
+
+    if has_loiter_issue:
         loiter_evidence = [
             str(text).strip()
             for text in (control.get("evidence") or [])
             if "loiter" in str(text).lower() and str(text).strip()
         ]
         if loiter_evidence:
-            return " ".join(loiter_evidence[:2])
-        return "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+            special_parts.append(loiter_evidence[0])
+        else:
+            special_parts.append(
+                "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+            )
 
-    affected = _affected_names(subsystems)
-    if not affected:
-        if session.get("classification") == "arm_check":
-            return "Коротка ARM-перевірка; критичних відхилень у доступних даних не виявлено."
-        return "У цій ARM-сесії підтверджених критичних відхилень за доступними даними не виявлено."
+    covered = {"propulsion" if has_propulsion_issue else None, "control" if has_loiter_issue else None}
+    covered.discard(None)
+    remaining = [name for name in affected if name not in covered]
+    if remaining:
+        labels = [SUBSYSTEM_LABELS.get(name, name) for name in remaining]
+        special_parts.append("Додатково уваги потребують: " + ", ".join(labels) + ".")
+
+    if special_parts:
+        if len(affected) > 1:
+            return (
+                "Виявлено декілька незалежних відхилень. "
+                + " ".join(special_parts)
+                + " Причинний зв'язок між цими відхиленнями за самим TLOG не встановлено."
+            )
+        return " ".join(special_parts)
+
     labels = [SUBSYSTEM_LABELS.get(name, name) for name in affected]
     return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
+
 
 def _analyze_session(session, radio_events, thrust_events, rpm_events) -> dict[str, Any]:
     scoped_radio = _events_for_session(radio_events, session)
     scoped_thrust = _events_for_session(thrust_events, session)
     scoped_rpm = _events_for_session(rpm_events, session)
 
+    propulsion = analyze_propulsion(session, scoped_thrust, scoped_rpm)
+    _enrich_propulsion_motor_identity(propulsion, scoped_rpm)
     subsystems = {
         "radio": analyze_radio(session, scoped_radio),
         "navigation": analyze_navigation(session),
         "power": analyze_power(session),
-        "propulsion": analyze_propulsion(session, scoped_thrust, scoped_rpm),
+        "propulsion": propulsion,
         "control": analyze_control_modes(session),
         "termination": analyze_termination(session),
     }
