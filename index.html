@@ -7355,8 +7355,6 @@ window.addEventListener('resize',()=>{const o=document.getElementById('graphView
 
 <script>
 (function(){
-  const TEMP_WAIT_IMAGE='https://i.imgur.com/CduyK.jpeg';
-
   function ensureTemporaryAnalysisWaitOverlay(){
     let overlay=document.getElementById('temporaryAnalysisWaitOverlay');
     if(overlay)return overlay;
@@ -7389,19 +7387,6 @@ window.addEventListener('resize',()=>{const o=document.getElementById('graphView
       textAlign:'center'
     });
 
-    const img=document.createElement('img');
-    img.src=TEMP_WAIT_IMAGE;
-    img.alt='Очікування завершення аналізу TLOG';
-    img.referrerPolicy='no-referrer';
-    Object.assign(img.style,{
-      display:'block',
-      width:'100%',
-      maxHeight:'68vh',
-      objectFit:'contain',
-      borderRadius:'10px',
-      background:'#090d12'
-    });
-
     const title=document.createElement('div');
     title.textContent='НЕ ТОРОПИСЬ!';
     Object.assign(title.style,{
@@ -7422,7 +7407,7 @@ window.addEventListener('resize',()=>{const o=document.getElementById('graphView
       color:'#94a3b8'
     });
 
-    card.append(img,title,subtitle);
+    card.append(title,subtitle);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
     return overlay;
