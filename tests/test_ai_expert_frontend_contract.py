@@ -40,6 +40,13 @@ class AIExpertFrontendContractTest(unittest.TestCase):
         self.assertIn("title='Перейти до рядка Timeline'", HTML)
         self.assertIn("bindAiExpertTimelineJumps();", HTML)
 
+    def test_timeline_uses_full_width_compact_columns_and_safe_highlight(self):
+        self.assertIn("TIMELINE_FULL_WIDTH_COMPACT_V1", HTML)
+        self.assertIn("width:calc(100vw - 24px)", HTML)
+        self.assertIn("column-gap:8px", HTML)
+        self.assertIn("inset 0 2px 0 #60a5fa", HTML)
+        self.assertNotIn("outline:2px solid #60a5fa", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()
