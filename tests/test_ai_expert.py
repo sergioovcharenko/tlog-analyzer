@@ -47,6 +47,19 @@ class AIExpertTest(unittest.TestCase):
         self.assertIn("причин", joined)
         self.assertNotIn("спричини", joined)
 
+    def test_loiter_misuse_is_named_in_short_conclusion(self):
+        timeline = [
+            {"time": "00:00.000", "eventType": "FLIGHT_SESSION_START", "mode": "LOITER", "alt": 1.0, "dist": 0.0},
+            {"time": "00:05.000", "eventType": "SNAPSHOT", "mode": "LOITER", "alt": 10.2, "dist": 20.0, "groundSpeed": 4.0},
+            {"time": "00:10.000", "eventType": "SNAPSHOT", "mode": "LOITER", "alt": 28.0, "dist": 109.0, "groundSpeed": 7.0},
+            {"time": "00:20.000", "eventType": "FLIGHT_SESSION_END", "mode": "LOITER", "alt": 0.0, "dist": 109.0},
+        ]
+        result = build_ai_expert_analysis(timeline=timeline, radio_events=[], thrust_events=[], rpm_events=[])
+        session = result["sessions"][0]
+        self.assertIn("неправильне використання", session["short_conclusion"].lower())
+        self.assertIn("loiter", session["short_conclusion"].lower())
+        self.assertIn("50 м", session["short_conclusion"])
+
 
 if __name__ == "__main__":
     unittest.main()
