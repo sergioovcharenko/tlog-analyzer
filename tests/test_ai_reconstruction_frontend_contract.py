@@ -9,7 +9,7 @@ class AIReconstructionFrontendContractTest(unittest.TestCase):
         self.assertIn('id="aiBlock"', HTML)
         self.assertIn('id="aiReconstructionBlock"', HTML)
         self.assertLess(HTML.index('id="aiBlock"'), HTML.index('id="aiReconstructionBlock"'))
-        self.assertIn('🤖 AI ВИСНОВОК', HTML)
+        self.assertIn('ТЕХНІЧНИЙ ВИСНОВОК', HTML)
 
     def test_renderer_and_sections_exist(self):
         for marker in (
