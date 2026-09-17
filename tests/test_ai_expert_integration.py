@@ -16,7 +16,7 @@ class AIExpertIntegrationContractTest(unittest.TestCase):
     def test_expert_layer_is_fail_closed(self):
         self.assertIn("ai_expert_warning = None", SOURCE)
         self.assertIn("except Exception as", SOURCE)
-        self.assertIn("Експертний AI-аналіз недоступний", SOURCE)
+        self.assertIn("Поглиблений аналіз недоступний", SOURCE)
 
     def test_existing_analyzer_events_are_normalized_for_expert(self):
         for marker in (
