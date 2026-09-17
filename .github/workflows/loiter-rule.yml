@@ -1,0 +1,45 @@
+name: LOITER vertical rule
+
+on:
+  push:
+    branches:
+      - feature/loiter-vertical-use-rule
+    paths:
+      - backend/ai_expert_modules.py
+      - tests/test_ai_expert_modules.py
+      - tools/apply_loiter_vertical_rule.py
+      - .github/workflows/loiter-rule.yml
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply LOITER rule
+        run: python tools/apply_loiter_vertical_rule.py
+      - name: Run focused AI expert module tests
+        run: python -m unittest tests.test_ai_expert_modules -v
+      - name: Run all AI expert tests
+        run: python -m unittest discover -s tests -p 'test_ai_expert*.py' -v
+      - name: Compile module
+        run: python -m py_compile backend/ai_expert_modules.py
+      - name: Commit generated module
+        run: |
+          if git diff --quiet -- backend/ai_expert_modules.py; then
+            echo "No generated LOITER changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/ai_expert_modules.py
+          git commit -m "feat: detect incorrect LOITER profile"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
