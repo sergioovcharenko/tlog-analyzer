@@ -1,5 +1,6 @@
 name: Analysis start UI cleanup
 
+# Final verification runs against the committed branch contents.
 on:
   push:
     branches: [fix/remove-analysis-overlay-and-simplify-title]
