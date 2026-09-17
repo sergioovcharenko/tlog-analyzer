@@ -280,11 +280,11 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
     if special_parts:
         if len(affected) > 1:
             return (
-                "Виявлено декілька незалежних відхилень. "
-                + " ".join(special_parts)
-                + " Причинний зв'язок між цими відхиленнями за самим TLOG не встановлено."
+                "Виявлено декілька незалежних відхилень.\n\n"
+                + "\n\n".join(special_parts)
+                + "\n\nПричинний зв'язок між цими відхиленнями за самим TLOG не встановлено."
             )
-        return " ".join(special_parts)
+        return "\n\n".join(special_parts)
 
     labels = [SUBSYSTEM_LABELS.get(name, name) for name in affected]
     return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
