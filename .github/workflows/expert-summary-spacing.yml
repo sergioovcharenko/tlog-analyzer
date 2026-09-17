@@ -1,0 +1,19 @@
+name: Expert summary spacing
+
+on:
+  push:
+    branches: [feature/expert-summary-section-spacing]
+    paths:
+      - '.github/workflows/expert-summary-spacing.yml'
+      - 'backend/ai_expert.py'
+      - 'index.html'
+      - 'tests/test_expert_summary_spacing.py'
+      - 'tools/apply_expert_summary_spacing.py'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run expert summary spacing contract
+        run: python -m pytest tests/test_expert_summary_spacing.py -q
