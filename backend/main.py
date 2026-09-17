@@ -4096,18 +4096,49 @@ async def analyze(file: UploadFile = File(...)):
             for s in flight_sessions:
                 arm_t=format_timeline_time(s["armTimestamp"],base_t)
                 dur=float(s.get("duration") or 0); mm=int(dur//60); ss=dur-mm*60
-                if s.get("endedArmed"):
-                    icon="🚨"; status="TLOG завершився при ARMED; DISARM не зафіксовано"
-                else:
-                    icon="✅"; status="DISARM "+format_timeline_time(s["disarmTimestamp"],base_t)
+                # PER_FLIGHT_STATUS_SUMMARY_V1
                 n=s.get("takeoffEpisodeCount",0)
+                _session_start=float(s.get("armTimestamp") or 0.0)
+                _session_end=s.get("disarmTimestamp")
+                _session_radio=[]
+                for _radio_ep in communication_loss_episodes:
+                    _radio_start=_radio_ep.get("startTimestamp")
+                    if not valid_number(_radio_start):
+                        continue
+                    if float(_radio_start) < _session_start:
+                        continue
+                    if valid_number(_session_end) and float(_radio_start) > float(_session_end):
+                        continue
+                    _session_radio.append(_radio_ep)
+                _session_unrecovered=any(not _ep.get("recovered") for _ep in _session_radio)
+
+                if s.get("endedArmed") and _session_unrecovered:
+                    icon="🔴"
+                    status_class="flight-session-status-critical"
+                    status="Втрата зв'язку — TLOG завершився при ARMED; DISARM не зафіксовано"
+                elif s.get("endedArmed"):
+                    icon="🔴"
+                    status_class="flight-session-status-critical"
+                    status="Потребує уваги — TLOG завершився при ARMED; DISARM не зафіксовано"
+                elif n==0:
+                    icon="🔵"
+                    status_class="flight-session-status-info"
+                    status="ARM-сесія / зліт не підтверджено; DISARM "+format_timeline_time(s["disarmTimestamp"],base_t)
+                elif _session_radio:
+                    icon="🟡"
+                    status_class="flight-session-status-warning"
+                    status="Потребує уваги — були втрати зв'язку, відновлено; DISARM "+format_timeline_time(s["disarmTimestamp"],base_t)
+                else:
+                    icon="🟢"
+                    status_class="flight-session-status-ok"
+                    status="Завершено штатно; DISARM "+format_timeline_time(s["disarmTimestamp"],base_t)
                 if n==0: eps="підтверджений зліт ≥2 м не визначено"
                 elif n==1: eps="1 злітно-посадковий епізод"
                 else: eps=f"{n} злітно-посадкові епізоди; був повторний зліт без DISARM"
                 minv=s.get("minVoltage")
                 minvt=f"; MIN V {minv:.2f} V" if minv is not None else ""
                 ai_alerts.append(
-                    f'<span class="ai-jump" data-jump-time="{arm_t}">'
+                    f'<span class="ai-jump flight-session-status {status_class}" data-jump-time="{arm_t}">'
                     f"{icon} <b>Політ №{s['number']}:</b> ARM {arm_t}; {status}. "
                     f"Тривалість {mm:02d}:{ss:04.1f}; {eps}. "
                     f"MAX ALT {s.get('maxAltitude',0):.1f} м; MAX струм {s.get('maxCurrent',0):.1f} A{minvt}. "
@@ -4955,6 +4986,12 @@ async def analyze(file: UploadFile = File(...)):
                 "ℹ️ НАЗЕМНА СЕСІЯ — ARM І ФАКТИЧНИЙ ПОЛІТ НЕ ЗАФІКСОВАНО:"
             )
 
+        elif log_ended_armed:
+            ai_verdict = (
+                "🚨 ЛОГ ОБІРВАВСЯ ПРИ ARMED. "
+                "ПОТРІБНА ПЕРЕВІРКА:"
+            )
+
         elif disarm_detected:
             if is_critical:
                 ai_verdict = (
@@ -4971,12 +5008,6 @@ async def analyze(file: UploadFile = File(...)):
                     "✅ БОРТ ЗАВЕРШИВ ПОЛІТ. "
                     "КРИТИЧНИХ ВІДХИЛЕНЬ НЕ ЗАФІКСОВАНО:"
                 )
-
-        elif log_ended_armed:
-            ai_verdict = (
-                "🚨 ЛОГ ОБІРВАВСЯ ПРИ ARMED. "
-                "ПОТРІБНА ПЕРЕВІРКА:"
-            )
 
         elif is_critical:
             ai_verdict = (

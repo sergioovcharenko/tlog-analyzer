@@ -1,0 +1,52 @@
+name: Per-flight status summary
+
+on:
+  push:
+    branches: [fix/per-flight-status-summary]
+    paths:
+      - '.github/workflows/per-flight-status-summary.yml'
+      - 'backend/main.py'
+      - 'index.html'
+      - 'tests/test_per_flight_status_summary.py'
+      - 'tools/apply_per_flight_status_summary.py'
+
+permissions:
+  contents: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # Re-apply idempotently so the committed branch state is verified too.
+      - name: Apply per-flight status patch
+        run: python tools/apply_per_flight_status_summary.py
+      - name: Run per-flight status contract
+        run: python -m unittest tests.test_per_flight_status_summary -v
+      - name: Compile backend
+        run: python -m py_compile backend/main.py
+      - name: Check embedded JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,flags=re.S|re.I)
+          Path('/tmp/app.js').write_text('\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+      - name: Commit patched status summary
+        run: |
+          if git diff --quiet -- backend/main.py index.html; then
+            echo 'No status summary changes to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/main.py index.html
+          git commit -m 'fix: show per-flight status with colors'
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
