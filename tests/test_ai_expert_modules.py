@@ -1,6 +1,6 @@
 import unittest
 
-from backend.ai_expert_modules import analyze_radio, analyze_navigation, analyze_termination
+from backend.ai_expert_modules import analyze_radio, analyze_navigation, analyze_termination, analyze_control_modes
 
 
 class AIExpertModuleTest(unittest.TestCase):
@@ -48,6 +48,35 @@ class AIExpertModuleTest(unittest.TestCase):
         self.assertIn("armed", joined)
         self.assertNotIn("авар", joined)
         self.assertNotIn("crash", joined)
+
+    def test_loiter_takeoff_horizontal_motion_below_50m_is_reported(self):
+        self.session["rows"] = [
+            {"time": "00:01.000", "mode": "LOITER", "alt": 1.0, "distance": 0.0},
+            {"time": "00:05.000", "mode": "LOITER", "alt": 10.2, "distance": 20.0},
+            {"time": "00:10.000", "mode": "LOITER", "alt": 25.0, "distance": 89.0},
+            {"time": "00:12.000", "mode": "LOITER", "alt": 28.0, "distance": 109.0},
+        ]
+        result = analyze_control_modes(self.session)
+        joined = " ".join(result["evidence"])
+        self.assertIn("loiter_vertical_takeoff", result["source_classes"])
+        self.assertIn("неправильне використання", joined.lower())
+        self.assertIn("10.2 м", joined)
+        self.assertIn("20.0 м", joined)
+        self.assertIn("50 м", joined)
+
+    def test_loiter_descent_below_50m_with_horizontal_motion_is_reported(self):
+        self.session["rows"] = [
+            {"time": "01:00.000", "mode": "LOITER", "alt": 70.0, "distance": 120.0},
+            {"time": "01:10.000", "mode": "LOITER", "alt": 50.0, "distance": 120.0},
+            {"time": "01:15.000", "mode": "LOITER", "alt": 35.0, "distance": 136.0},
+            {"time": "01:20.000", "mode": "LOITER", "alt": 10.0, "distance": 145.0},
+        ]
+        result = analyze_control_modes(self.session)
+        joined = " ".join(result["evidence"])
+        self.assertIn("loiter_vertical_landing", result["source_classes"])
+        self.assertIn("35.0 м", joined)
+        self.assertIn("16.0 м", joined)
+        self.assertIn("вертикально", joined.lower())
 
 
 if __name__ == "__main__":
