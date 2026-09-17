@@ -1439,6 +1439,8 @@ html,body{max-width:100%;overflow-x:hidden}
 .ai-expert-section ul{margin:0;padding-left:20px;line-height:1.5}
 .ai-expert-section li{margin:3px 0}
 .ai-expert-chronology{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.ai-expert-chronology li[data-jump-time]{cursor:pointer;border-radius:5px;padding:3px 6px;margin-left:-6px;transition:.15s}
+.ai-expert-chronology li[data-jump-time]:hover,.ai-expert-chronology li[data-jump-time]:focus-visible{background:rgba(59,130,246,.10);color:#bfdbfe;outline:none}
 .ai-expert-subsystems{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;margin-top:12px}
 .ai-expert-subsystem{border:1px solid var(--border-color);border-radius:7px;padding:10px;background:var(--bg-card)}
 .ai-expert-subsystem-title{font-weight:800;margin-bottom:4px}
@@ -3607,6 +3609,73 @@ function appendExpertList(host,title,items,extraClass=''){
   section.append(heading,list);host.appendChild(section);
 }
 
+// AI_EXPERT_TIMELINE_JUMPS_V1
+function appendExpertChronology(host,events){
+  if(!host||!Array.isArray(events)||!events.length)return;
+  const section=document.createElement('section');
+  section.className='ai-expert-section ai-expert-chronology';
+  const heading=document.createElement('h4');heading.textContent='ХРОНОЛОГІЯ КЛЮЧОВИХ ПОДІЙ';
+  const list=document.createElement('ul');
+  events.forEach(event=>{
+    const li=document.createElement('li');
+    const time=formatExpertTime(event?.time_s);
+    li.textContent=`${time} — ${event?.text||event?.type||'подія'}`;
+    if(Number.isFinite(Number(event?.time_s))){
+      li.dataset.jumpTime=time;
+      li.title='Перейти до рядка Timeline';
+      li.tabIndex=0;
+      li.setAttribute('role','button');
+    }
+    list.appendChild(li);
+  });
+  section.append(heading,list);host.appendChild(section);
+}
+
+function jumpAiExpertToTimelineTime(targetTime){
+  const timeline=document.getElementById('timelineContainer');
+  if(!timeline||!targetTime)return;
+  const rows=[...timeline.querySelectorAll('.tl-item[data-time]')];
+  let target=rows.find(row=>row.dataset.time===targetTime);
+  if(!target){
+    const wanted=timelineSeconds(targetTime);
+    if(Number.isFinite(wanted)&&rows.length){
+      let best=null,bestDiff=Infinity;
+      rows.forEach(row=>{
+        const value=timelineSeconds(row.dataset.time);
+        if(!Number.isFinite(value))return;
+        const diff=Math.abs(value-wanted);
+        if(diff<bestDiff){bestDiff=diff;best=row;}
+      });
+      target=best;
+    }
+  }
+  if(!target)return;
+  target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
+  target.classList.remove('timeline-jump-highlight');
+  void target.offsetWidth;
+  target.classList.add('timeline-jump-highlight');
+  setTimeout(()=>target.classList.remove('timeline-jump-highlight'),1800);
+}
+
+function bindAiExpertTimelineJumps(){
+  const block=document.getElementById('aiExpertBlock');
+  if(!block)return;
+  block.querySelectorAll('.ai-expert-chronology li[data-jump-time]').forEach(li=>{
+    if(li.dataset.jumpBound==='1')return;
+    const activate=()=>{
+      const targetTime=li.dataset.jumpTime;
+      if(targetTime)jumpAiExpertToTimelineTime(targetTime);
+    };
+    li.addEventListener('click',activate);
+    li.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      event.preventDefault();
+      activate();
+    });
+    li.dataset.jumpBound='1';
+  });
+}
+
 function renderAiExpert(expert){
   const block=document.getElementById('aiExpertBlock');
   const summaryHost=document.getElementById('aiExpertSummary');
@@ -3643,8 +3712,7 @@ function renderAiExpert(expert){
     const body=document.createElement('div');body.className='ai-expert-body';
     const conclusion=document.createElement('p');conclusion.className='ai-expert-conclusion';conclusion.textContent=String(session.short_conclusion||'');body.appendChild(conclusion);
 
-    const chronology=(session.chronology||[]).map(event=>`${formatExpertTime(event.time_s)} — ${event.text||event.type||'подія'}`);
-    appendExpertList(body,'ХРОНОЛОГІЯ КЛЮЧОВИХ ПОДІЙ',chronology,'ai-expert-chronology');
+    appendExpertChronology(body,session.chronology||[]);
 
     const subsystemGrid=document.createElement('div');subsystemGrid.className='ai-expert-subsystems';
     Object.entries(session.subsystems||{}).forEach(([key,module])=>{
@@ -3671,6 +3739,7 @@ function renderAiExpert(expert){
     const warning=document.createElement('div');warning.className='ai-expert-warning';warning.textContent=expert.warnings.join(' • ');detailsHost.appendChild(warning);
   }
   block.hidden=false;
+  bindAiExpertTimelineJumps();
 }
 
 function renderResults(data){
