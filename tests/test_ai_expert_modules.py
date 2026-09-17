@@ -78,6 +78,27 @@ class AIExpertModuleTest(unittest.TestCase):
         self.assertIn("16.0 м", joined)
         self.assertIn("вертикально", joined.lower())
 
+    def test_loiter_above_300m_is_reported_outside_operating_range(self):
+        self.session["rows"] = [
+            {"time": "02:00.000", "mode": "LOITER", "alt": 120.0, "distance": 200.0},
+            {"time": "02:10.000", "mode": "LOITER", "alt": 305.5, "distance": 205.0},
+        ]
+        result = analyze_control_modes(self.session)
+        joined = " ".join(result["evidence"])
+        self.assertIn("loiter_altitude_range", result["source_classes"])
+        self.assertIn("305.5 м", joined)
+        self.assertIn("50–300 м", joined)
+
+    def test_loiter_vertical_takeoff_with_small_drift_is_not_flagged(self):
+        self.session["rows"] = [
+            {"time": "03:00.000", "mode": "LOITER", "alt": 1.0, "distance": 0.0},
+            {"time": "03:05.000", "mode": "LOITER", "alt": 25.0, "distance": 3.0},
+            {"time": "03:10.000", "mode": "LOITER", "alt": 50.0, "distance": 5.0},
+            {"time": "03:15.000", "mode": "LOITER", "alt": 80.0, "distance": 40.0},
+        ]
+        result = analyze_control_modes(self.session)
+        self.assertNotIn("loiter_vertical_takeoff", result["source_classes"])
+
 
 if __name__ == "__main__":
     unittest.main()
