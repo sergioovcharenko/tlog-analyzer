@@ -78,7 +78,7 @@ def test_combined_video_tlog_results_section_exists():
     assert 'id="videoAnalysisCorrelations"' in HTML
     assert 'id="videoAnalysisObservations"' in HTML
     assert 'id="videoAnalysisWarnings"' in HTML
-    assert "AI — ВІДЕО + TLOG" in HTML
+    assert "🎥 ВІДЕО + TLOG" in HTML
     assert "renderVideoAnalysisSection" in HTML
 
 
