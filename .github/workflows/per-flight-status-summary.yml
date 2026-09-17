@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # Re-apply idempotently so the committed branch state is verified too.
       - name: Apply per-flight status patch
         run: python tools/apply_per_flight_status_summary.py
       - name: Run per-flight status contract
