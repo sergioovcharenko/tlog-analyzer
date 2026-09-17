@@ -1,7 +1,7 @@
 from pathlib import Path
 
-path = Path("backend/ai_expert_modules.py")
-text = path.read_text(encoding="utf-8")
+modules_path = Path("backend/ai_expert_modules.py")
+text = modules_path.read_text(encoding="utf-8")
 start = text.index("def analyze_control_modes(session: dict[str, Any]) -> dict[str, Any]:")
 end = text.index("\ndef analyze_termination(session: dict[str, Any]) -> dict[str, Any]:", start)
 
@@ -13,10 +13,23 @@ replacement = r'''def analyze_control_modes(session: dict[str, Any]) -> dict[str
     previous_mode = None
     previous_time = None
 
-    def first_num(row, keys):
+    def first_measure(row, keys, *, distance=False):
         for key in keys:
-            value = _num(row.get(key))
+            raw = row.get(key)
+            value = _num(raw)
+            if value is None and raw is not None:
+                cleaned = "".join(ch if ch.isdigit() or ch in ".,-" else " " for ch in str(raw)).replace(",", ".")
+                for token in cleaned.split():
+                    try:
+                        value = float(token)
+                        break
+                    except ValueError:
+                        pass
             if value is not None:
+                if distance:
+                    unit_text = str(raw or "").lower()
+                    if "km" in unit_text or "км" in unit_text:
+                        value *= 1000.0
                 return value
         return None
 
@@ -25,8 +38,12 @@ replacement = r'''def analyze_control_modes(session: dict[str, Any]) -> dict[str
         t = _row_time(row)
         mode = str(row.get("mode") or "").strip().upper()
         if mode == "LOITER":
-            alt = first_num(row, ("alt", "altitude", "relAlt", "relative_alt", "relativeAltitude", "alt_m"))
-            distance = first_num(row, ("distance", "dist", "homeDistance", "home_distance", "distanceM", "distance_m"))
+            alt = first_measure(row, ("alt", "altitude", "relAlt", "relative_alt", "relativeAltitude", "alt_m"))
+            distance = first_measure(
+                row,
+                ("dist", "distance", "homeDistance", "home_distance", "distanceM", "distance_m"),
+                distance=True,
+            )
             if alt is not None and distance is not None:
                 loiter_samples.append({"time_s": t, "alt": alt, "distance": distance})
 
@@ -57,8 +74,8 @@ replacement = r'''def analyze_control_modes(session: dict[str, Any]) -> dict[str
             related.append({"time_s": t, "type": "control", "text": text})
 
     # Project-specific LOITER operating rule:
-    # take off vertically 0->50 m, normal horizontal flight at 50-300 m,
-    # and descend vertically 50->0 m. Ignore up to 10 m horizontal drift.
+    # vertical takeoff 0->50 m, normal horizontal operation at 50-300 m,
+    # vertical descent 50->0 m. Up to 10 m horizontal drift is ignored.
     if len(loiter_samples) >= 2:
         horizontal_tolerance_m = 10.0
         max_alt = max(sample["alt"] for sample in loiter_samples)
@@ -82,8 +99,8 @@ replacement = r'''def analyze_control_modes(session: dict[str, Any]) -> dict[str
                 text = (
                     "Неправильне використання польотного режиму LOITER: під час набору висоти "
                     f"горизонтальне переміщення {horizontal:.1f} м зафіксоване вже на висоті {violation['alt']:.1f} м. "
-                    "Для цього профілю спочатку потрібно виконати вертикальний набір до 50 м, "
-                    "а горизонтальне переміщення виконувати після досягнення 50 м; робочий діапазон LOITER — 50–300 м."
+                    "Спочатку потрібно виконати вертикальний набір до 50 м, а горизонтальне переміщення "
+                    "виконувати після досягнення 50 м; робочий діапазон LOITER — 50–300 м."
                 )
                 evidence.append(text)
                 if violation["time_s"] is not None:
@@ -148,5 +165,34 @@ replacement = r'''def analyze_control_modes(session: dict[str, Any]) -> dict[str
 '''
 
 new_text = text[:start] + replacement + text[end:]
-path.write_text(new_text, encoding="utf-8")
+modules_path.write_text(new_text, encoding="utf-8")
+
+expert_path = Path("backend/ai_expert.py")
+expert_text = expert_path.read_text(encoding="utf-8")
+short_start = expert_text.index("def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, Any]]) -> str:")
+short_end = expert_text.index("\ndef _analyze_session(", short_start)
+short_replacement = r'''def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, Any]]) -> str:
+    control = subsystems.get("control") or {}
+    control_sources = set(control.get("source_classes") or [])
+    loiter_sources = {"loiter_vertical_takeoff", "loiter_vertical_landing", "loiter_altitude_range"}
+    if control_sources.intersection(loiter_sources):
+        loiter_evidence = [
+            str(text).strip()
+            for text in (control.get("evidence") or [])
+            if "loiter" in str(text).lower() and str(text).strip()
+        ]
+        if loiter_evidence:
+            return " ".join(loiter_evidence[:2])
+        return "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+
+    affected = _affected_names(subsystems)
+    if not affected:
+        if session.get("classification") == "arm_check":
+            return "Коротка ARM-перевірка; критичних відхилень у доступних даних не виявлено."
+        return "У цій ARM-сесії підтверджених критичних відхилень за доступними даними не виявлено."
+    labels = [SUBSYSTEM_LABELS.get(name, name) for name in affected]
+    return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
+'''
+expert_path.write_text(expert_text[:short_start] + short_replacement + expert_text[short_end:], encoding="utf-8")
+
 print("LOITER vertical profile rule applied")
