@@ -195,6 +195,19 @@ def _build_checks(subsystems: dict[str, dict[str, Any]]) -> list[str]:
 
 
 def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, Any]]) -> str:
+    control = subsystems.get("control") or {}
+    control_sources = set(control.get("source_classes") or [])
+    loiter_sources = {"loiter_vertical_takeoff", "loiter_vertical_landing", "loiter_altitude_range"}
+    if control_sources.intersection(loiter_sources):
+        loiter_evidence = [
+            str(text).strip()
+            for text in (control.get("evidence") or [])
+            if "loiter" in str(text).lower() and str(text).strip()
+        ]
+        if loiter_evidence:
+            return " ".join(loiter_evidence[:2])
+        return "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+
     affected = _affected_names(subsystems)
     if not affected:
         if session.get("classification") == "arm_check":
@@ -202,7 +215,6 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
         return "У цій ARM-сесії підтверджених критичних відхилень за доступними даними не виявлено."
     labels = [SUBSYSTEM_LABELS.get(name, name) for name in affected]
     return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
-
 
 def _analyze_session(session, radio_events, thrust_events, rpm_events) -> dict[str, Any]:
     scoped_radio = _events_for_session(radio_events, session)

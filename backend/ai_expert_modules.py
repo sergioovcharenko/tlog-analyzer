@@ -311,10 +311,23 @@ def analyze_control_modes(session: dict[str, Any]) -> dict[str, Any]:
     previous_mode = None
     previous_time = None
 
-    def first_num(row, keys):
+    def first_measure(row, keys, *, distance=False):
         for key in keys:
-            value = _num(row.get(key))
+            raw = row.get(key)
+            value = _num(raw)
+            if value is None and raw is not None:
+                cleaned = "".join(ch if ch.isdigit() or ch in ".,-" else " " for ch in str(raw)).replace(",", ".")
+                for token in cleaned.split():
+                    try:
+                        value = float(token)
+                        break
+                    except ValueError:
+                        pass
             if value is not None:
+                if distance:
+                    unit_text = str(raw or "").lower()
+                    if "km" in unit_text or "км" in unit_text:
+                        value *= 1000.0
                 return value
         return None
 
@@ -323,8 +336,12 @@ def analyze_control_modes(session: dict[str, Any]) -> dict[str, Any]:
         t = _row_time(row)
         mode = str(row.get("mode") or "").strip().upper()
         if mode == "LOITER":
-            alt = first_num(row, ("alt", "altitude", "relAlt", "relative_alt", "relativeAltitude", "alt_m"))
-            distance = first_num(row, ("distance", "dist", "homeDistance", "home_distance", "distanceM", "distance_m"))
+            alt = first_measure(row, ("alt", "altitude", "relAlt", "relative_alt", "relativeAltitude", "alt_m"))
+            distance = first_measure(
+                row,
+                ("dist", "distance", "homeDistance", "home_distance", "distanceM", "distance_m"),
+                distance=True,
+            )
             if alt is not None and distance is not None:
                 loiter_samples.append({"time_s": t, "alt": alt, "distance": distance})
 
@@ -355,8 +372,8 @@ def analyze_control_modes(session: dict[str, Any]) -> dict[str, Any]:
             related.append({"time_s": t, "type": "control", "text": text})
 
     # Project-specific LOITER operating rule:
-    # take off vertically 0->50 m, normal horizontal flight at 50-300 m,
-    # and descend vertically 50->0 m. Ignore up to 10 m horizontal drift.
+    # vertical takeoff 0->50 m, normal horizontal operation at 50-300 m,
+    # vertical descent 50->0 m. Up to 10 m horizontal drift is ignored.
     if len(loiter_samples) >= 2:
         horizontal_tolerance_m = 10.0
         max_alt = max(sample["alt"] for sample in loiter_samples)
@@ -380,8 +397,8 @@ def analyze_control_modes(session: dict[str, Any]) -> dict[str, Any]:
                 text = (
                     "Неправильне використання польотного режиму LOITER: під час набору висоти "
                     f"горизонтальне переміщення {horizontal:.1f} м зафіксоване вже на висоті {violation['alt']:.1f} м. "
-                    "Для цього профілю спочатку потрібно виконати вертикальний набір до 50 м, "
-                    "а горизонтальне переміщення виконувати після досягнення 50 м; робочий діапазон LOITER — 50–300 м."
+                    "Спочатку потрібно виконати вертикальний набір до 50 м, а горизонтальне переміщення "
+                    "виконувати після досягнення 50 м; робочий діапазон LOITER — 50–300 м."
                 )
                 evidence.append(text)
                 if violation["time_s"] is not None:
