@@ -8,6 +8,7 @@ on:
       - 'backend/ai_expert.py'
       - 'index.html'
       - 'tests/test_expert_summary_spacing.py'
+      - 'tests/test_ai_expert_integration.py'
       - 'tools/apply_expert_summary_spacing.py'
 
 permissions:
