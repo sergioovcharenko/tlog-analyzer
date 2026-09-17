@@ -1,0 +1,22 @@
+name: Per-flight status summary
+
+on:
+  push:
+    branches: [fix/per-flight-status-summary]
+    paths:
+      - '.github/workflows/per-flight-status-summary.yml'
+      - 'backend/main.py'
+      - 'index.html'
+      - 'tests/test_per_flight_status_summary.py'
+      - 'tools/apply_per_flight_status_summary.py'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run per-flight status contract
+        run: python -m unittest tests.test_per_flight_status_summary -v
