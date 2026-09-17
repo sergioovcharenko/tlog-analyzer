@@ -1,0 +1,36 @@
+name: Remove user-facing AI labels
+
+on:
+  push:
+    branches:
+      - feature/remove-ai-user-facing-labels
+    paths:
+      - index.html
+      - tests/test_user_facing_ai_labels.py
+      - .github/workflows/remove-ai-user-facing-labels.yml
+  pull_request:
+    paths:
+      - index.html
+      - tests/test_user_facing_ai_labels.py
+      - .github/workflows/remove-ai-user-facing-labels.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify user-facing labels
+        run: python -m unittest tests.test_user_facing_ai_labels -v
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>',s,flags=re.S|re.I)
+          Path('/tmp/tlog-inline.js').write_text('\\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/tlog-inline.js
