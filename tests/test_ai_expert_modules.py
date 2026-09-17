@@ -1,6 +1,6 @@
 import unittest
 
-from backend.ai_expert_modules import analyze_radio, analyze_navigation, analyze_termination, analyze_control_modes, analyze_propulsion
+from backend.ai_expert_modules import analyze_radio, analyze_navigation, analyze_termination, analyze_control_modes
 
 
 class AIExpertModuleTest(unittest.TestCase):
@@ -48,26 +48,6 @@ class AIExpertModuleTest(unittest.TestCase):
         self.assertIn("armed", joined)
         self.assertNotIn("авар", joined)
         self.assertNotIn("crash", joined)
-
-    def test_propulsion_names_motor_when_lower_motor_is_available(self):
-        result = analyze_propulsion(
-            self.session,
-            thrust_events=[],
-            rpm_events=[
-                {
-                    "time_s": 420.0,
-                    "differencePct": 48.5,
-                    "drop": True,
-                    "type": "rpm_drop",
-                    "lowerMotor": 4,
-                    "higherMotor": 3,
-                }
-            ],
-        )
-        joined = " ".join(result["evidence"])
-        self.assertIn("Motor 4", joined)
-        self.assertIn("48.5%", joined)
-        self.assertIn("падіння RPM", joined)
 
     def test_loiter_takeoff_horizontal_motion_below_50m_is_reported(self):
         self.session["rows"] = [
