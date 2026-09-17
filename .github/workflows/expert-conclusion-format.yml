@@ -1,0 +1,24 @@
+name: Expert conclusion format
+
+on:
+  pull_request:
+    paths:
+      - 'backend/ai_expert.py'
+      - 'tests/test_ai_expert.py'
+      - 'index.html'
+      - 'tools/apply_ai_expert.py'
+      - '.github/workflows/expert-conclusion-format.yml'
+  workflow_dispatch:
+
+jobs:
+  expert-conclusion-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run expert analyzer tests
+        run: python -m unittest tests.test_ai_expert

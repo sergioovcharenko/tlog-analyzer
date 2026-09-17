@@ -1,0 +1,38 @@
+name: Apply expert conclusion sections
+
+on:
+  push:
+    branches:
+      - feature/expert-conclusion-separated-sections
+    paths:
+      - '.github/workflows/apply-expert-conclusion-sections.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/expert-conclusion-separated-sections
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply bounded patch
+        run: python tools/apply_expert_conclusion_sections.py
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/ai_expert.py index.html tools/apply_ai_expert.py
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ui: separate propulsion and LOITER conclusion sections"
+            git push origin HEAD:feature/expert-conclusion-separated-sections
+          fi

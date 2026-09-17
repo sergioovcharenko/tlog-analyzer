@@ -249,13 +249,29 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
     propulsion = subsystems.get("propulsion") or {}
     has_propulsion_issue = propulsion.get("status") in {"confirmed_problem", "probable_problem"}
 
-    special_parts: list[str] = []
+    sections: list[str] = []
     if has_propulsion_issue:
         propulsion_evidence = [str(text).strip() for text in (propulsion.get("evidence") or []) if str(text).strip()]
-        if propulsion_evidence:
-            special_parts.append("ESC / RPM / тяга: " + " ".join(propulsion_evidence[:3]))
+        selected: list[str] = []
+        motor_evidence = next((text for text in propulsion_evidence if "motor " in text.lower()), "")
+        if motor_evidence:
+            selected.append(motor_evidence.rstrip("."))
+        for text in propulsion_evidence:
+            lower = text.lower()
+            if text == motor_evidence:
+                continue
+            if "асиметр" in lower and any("асиметр" in item.lower() for item in selected):
+                continue
+            if "падіння rpm" in lower and any("падіння rpm" in item.lower() for item in selected):
+                continue
+            if len(selected) < 3:
+                selected.append(text.rstrip("."))
+        if selected:
+            sections.append("ESC / RPM / тяга:
+" + "; ".join(selected) + ".")
         else:
-            special_parts.append("ESC / RPM / тяга: зафіксовано ознаки проблеми силової установки.")
+            sections.append("ESC / RPM / тяга:
+Зафіксовано ознаки проблеми силової установки.")
 
     if has_loiter_issue:
         loiter_evidence = [
@@ -264,27 +280,30 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
             if "loiter" in str(text).lower() and str(text).strip()
         ]
         if loiter_evidence:
-            special_parts.append(loiter_evidence[0])
+            loiter_text = loiter_evidence[0]
         else:
-            special_parts.append(
-                "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+            loiter_text = (
+                "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, "
+                "робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
             )
+        sections.append("Керування / режими:
+" + loiter_text)
 
     covered = {"propulsion" if has_propulsion_issue else None, "control" if has_loiter_issue else None}
     covered.discard(None)
     remaining = [name for name in affected if name not in covered]
     if remaining:
         labels = [SUBSYSTEM_LABELS.get(name, name) for name in remaining]
-        special_parts.append("Додатково уваги потребують: " + ", ".join(labels) + ".")
+        sections.append("Додатково потребують уваги:
+" + ", ".join(labels) + ".")
 
-    if special_parts:
+    if sections:
         if len(affected) > 1:
-            return (
-                "Виявлено декілька незалежних відхилень. "
-                + " ".join(special_parts)
-                + " Причинний зв'язок між цими відхиленнями за самим TLOG не встановлено."
-            )
-        return " ".join(special_parts)
+            sections.insert(0, "Виявлено декілька незалежних відхилень.")
+            sections.append("Причинний зв'язок між цими відхиленнями за самим TLOG не встановлено.")
+        return "
+
+".join(sections)
 
     labels = [SUBSYSTEM_LABELS.get(name, name) for name in affected]
     return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
