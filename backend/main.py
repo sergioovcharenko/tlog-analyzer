@@ -5140,7 +5140,7 @@ async def analyze(file: UploadFile = File(...)):
                 rpm_events=_expert_rpm_events,
             )
         except Exception as exc:
-            ai_expert_warning = f"Експертний AI-аналіз недоступний: {exc}"
+            ai_expert_warning = f"Поглиблений аналіз недоступний: {exc}"
         _perf["ai_ms"] = round((time.perf_counter() - _perf_ai_start) * 1000.0, 1)
 
         _perf_graphs_start = time.perf_counter()

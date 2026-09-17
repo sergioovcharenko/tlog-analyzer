@@ -18,7 +18,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI — TLOG Analyzer v1.3.3 «3D Lazy FIX»</title>
+<title>TLOG Analyzer v1.3.3 «3D Lazy FIX»</title>
 <style>
 :root{
   --bg-main:#0a0d11;
@@ -1457,7 +1457,7 @@ html,body{max-width:100%;overflow-x:hidden}
 <div style="position:fixed;top:10px;right:12px;z-index:9999;font:600 11px/1.2 Arial,sans-serif;padding:6px 9px;border:1px solid rgba(120,170,220,.35);border-radius:999px;background:rgba(8,18,32,.86);color:#9dc7ef;pointer-events:none;">BETA v1.0</div>
 <div class="header">
   <div>
-    <h1>🚁 AI</h1>
+    <h1>🚁 TLOG ANALYZER</h1>
     <p>TELEMETRY ANALYZER</p>
   </div>
   <div class="header-actions">
@@ -1570,7 +1570,7 @@ html,body{max-width:100%;overflow-x:hidden}
 
     <!-- AI_RECONSTRUCTION_V1 -->
     <section id="aiReconstructionBlock" class="ai-reconstruction" hidden>
-      <h3>🤖 AI ВИСНОВОК</h3>
+      <h3>ТЕХНІЧНИЙ ВИСНОВОК</h3>
       <div id="aiReconWhat"></div>
       <div id="aiReconSequence"></div>
       <div id="aiReconActions"></div>
@@ -1580,7 +1580,7 @@ html,body{max-width:100%;overflow-x:hidden}
 
     <!-- AI_EXPERT_V1 -->
     <section id="aiExpertBlock" class="ai-expert" hidden>
-      <h3>🧠 AI ЕКСПЕРТНИЙ ВИСНОВОК</h3>
+      <h3>ПОГЛИБЛЕНИЙ АНАЛІЗ ПОЛЬОТУ</h3>
       <div id="aiExpertSummary"></div>
       <div id="aiExpertSessions" class="ai-expert-sessions"></div>
       <div id="aiExpertDetails"></div>
@@ -1589,7 +1589,7 @@ html,body{max-width:100%;overflow-x:hidden}
 
     <!-- VIDEO_TLOG_RESULTS_V1 -->
     <section id="videoAnalysisSection" class="video-analysis-results" hidden>
-      <div class="section-title">🎥 AI — ВІДЕО + TLOG</div>
+      <div class="section-title">🎥 ВІДЕО + TLOG</div>
       <div class="video-analysis-shell">
         <div id="videoAnalysisSummary" class="video-analysis-summary"></div>
         <div class="video-analysis-subtitle">Попередження</div>
@@ -1624,7 +1624,7 @@ html,body{max-width:100%;overflow-x:hidden}
       </div>
       <div class="analysis-fingerprint-grid" id="analysisFingerprintGrid"></div>
       <div class="analysis-fingerprint-note">
-        Службовий блок v1.2. Він лише читає готовий результат після аналізу й не змінює TLOG, Timeline, карту, NED/DR, AI-висновки або будь-які розрахунки. Однаковий контрольний код у двох версіях означає, що вибраний набір ключових результатів збігається.
+        Службовий блок v1.2. Він лише читає готовий результат після аналізу й не змінює TLOG, Timeline, карту, NED/DR, результати аналізу або будь-які розрахунки. Однаковий контрольний код у двох версіях означає, що вибраний набір ключових результатів збігається.
       </div>
     </div>
 
@@ -2138,7 +2138,7 @@ function buildReportModel(data){
   const radioDbm=Array.isArray(graph.radio_dbm)?graph.radio_dbm:[];
   const linkLostSamples=radioDbm.reduce((n,x)=>n+(Number(x)===-128?1:0),0);
   const safe={
-    title:'AI — TLOG Analyzer',
+    title:'TLOG Analyzer',
     subtitle:'Звіт аналізу польоту',
     sourceFile:safeReportText(selectedFile?.name),
     generatedAt:new Date().toLocaleString('uk-UA'),
@@ -2254,7 +2254,7 @@ function reportAiConclusion(model){
   ];
   blocks.forEach(([title,value])=>{const body=reportListHtml(value);if(body)sections.push(`<h3>${escapeReportHtml(title)}</h3><ul>${body}</ul>`);});
   if(recon.confidence)sections.push(reportMetric('Confidence',safeReportText(recon.confidence)));
-  return sections.length?sections.join(''):'<div class="muted">AI-висновок у цьому аналізі відсутній.</div>';
+  return sections.length?sections.join(''):'<div class="muted">Технічний висновок у цьому аналізі відсутній.</div>';
 }
 
 function buildReportHtml(data,chartImages={}){
@@ -2270,7 +2270,7 @@ function buildReportHtml(data,chartImages={}){
   <div class="section"><h2>Зв’язок</h2><div class="metrics">${reportMetric('MIN RSSI',model.radio.minRssi)}${reportMetric('AVG dBm',model.radio.avgDbm)}${reportMetric('Worst dBm',model.radio.worstDbm)}${reportMetric('dBm samples',model.radio.dbmSampleCount)}${reportMetric('-128 dBm',model.radio.linkLostSamples)}</div></div>
   <div class="section"><h2>VTX</h2><table class="vtx"><thead><tr><th></th><th>5.2 GHz</th><th>5.5 GHz</th><th>5.8 GHz</th></tr></thead><tbody>${reportVtxMatrix(model)}</tbody></table></div>
   <div class="section"><h2>Критичні події</h2><table class="events"><thead><tr><th>Час</th><th>Рівень</th><th>Повідомлення</th><th>Пояснення</th></tr></thead><tbody>${reportBoardMessages(model)}</tbody></table></div>
-  <div class="section"><h2>AI-висновок</h2>${reportAiConclusion(model)}</div>
+  <div class="section"><h2>Технічний висновок</h2>${reportAiConclusion(model)}</div>
   ${chartHtml?`<div class="section"><h2>Графіки</h2>${chartHtml}</div>`:''}</div></body></html>`;
 }
 
@@ -2346,9 +2346,9 @@ async function shareReport(){
   const blob=await createReportBlob();
   const file=new File([blob],`${reportFileBaseName()}.html`,{type:'text/html'});
   if(navigator.share&&navigator.canShare?.({files:[file]})){
-    await navigator.share({title:'AI — TLOG Analyzer',text:'Звіт аналізу польоту',files:[file]});return;
+    await navigator.share({title:'TLOG Analyzer',text:'Звіт аналізу польоту',files:[file]});return;
   }
-  if(navigator.share){await navigator.share({title:'AI — TLOG Analyzer',text:'Звіт аналізу польоту'});return;}
+  if(navigator.share){await navigator.share({title:'TLOG Analyzer',text:'Звіт аналізу польоту'});return;}
   await downloadReportHtml();
   throw new Error('Пряме системне поширення не підтримується цим браузером. HTML-звіт збережено.');
 }
@@ -3566,7 +3566,7 @@ function renderVideoAnalysisSection(data){
     });
     observationsBox.append(list);
   }else{
-    observationsBox.append(videoResultNode('div','video-analysis-empty','Синхронізація та ROI готові. На цьому етапі кадри ще не інтерпретуються AI; візуальні спостереження будуть додані окремим етапом.'));
+    observationsBox.append(videoResultNode('div','video-analysis-empty','Синхронізація та ROI готові. Автоматичний аналіз кадрів на цьому етапі ще не виконується; візуальні спостереження будуть додані окремим етапом.'));
   }
 
   correlationsBox.replaceChildren();
@@ -6693,7 +6693,7 @@ function renderTimelineTable(items,containerId){
   }
 
   // V23.31 / V24.11 — UI-only логіка дальності.
-  // Вона НЕ змінює data.flight.maxDistance, Timeline, AI-висновки, карту,
+  // Вона НЕ змінює data.flight.maxDistance, Timeline, результати аналізу, карту,
   // сектор АС або будь-які інші результати аналізу.
   //
   // Правила:

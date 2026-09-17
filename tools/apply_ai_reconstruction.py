@@ -42,7 +42,7 @@ def patch_frontend():
 
     if 'AI_RECONSTRUCTION_V1' not in s:
         anchor = '''    <div id="aiBlock" class="ai-box">\n      <h3 id="aiTitle" class="ai-title"></h3>\n      <ul id="aiAlerts" class="ai-list"></ul>\n    </div>\n'''
-        block = '''\n    <!-- AI_RECONSTRUCTION_V1 -->\n    <section id="aiReconstructionBlock" class="ai-reconstruction" hidden>\n      <h3>🤖 AI ВИСНОВОК</h3>\n      <div id="aiReconWhat"></div>\n      <div id="aiReconSequence"></div>\n      <div id="aiReconActions"></div>\n      <div id="aiReconAlternatives"></div>\n      <div id="aiReconConfidence"></div>\n    </section>\n'''
+        block = '''\n    <!-- AI_RECONSTRUCTION_V1 -->\n    <section id="aiReconstructionBlock" class="ai-reconstruction" hidden>\n      <h3>ТЕХНІЧНИЙ ВИСНОВОК</h3>\n      <div id="aiReconWhat"></div>\n      <div id="aiReconSequence"></div>\n      <div id="aiReconActions"></div>\n      <div id="aiReconAlternatives"></div>\n      <div id="aiReconConfidence"></div>\n    </section>\n'''
         if anchor not in s:
             raise SystemExit('frontend aiBlock anchor not found')
         s = s.replace(anchor, anchor + block, 1)
