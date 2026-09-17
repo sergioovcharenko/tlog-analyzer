@@ -1,4 +1,5 @@
 name: Remove analysis wait image
+# FINAL_HEAD_VERIFY_V1
 
 on:
   push:
