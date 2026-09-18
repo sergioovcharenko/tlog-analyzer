@@ -2451,10 +2451,34 @@ function setSelectedTlog(file){
   return true;
 }
 
+/* Android: TLOG, відкритий напряму з WhatsApp/Files.
+   Файл лишається локально в cache застосунку. */
+async function importAndroidSharedTlog(){
+  const params=new URLSearchParams(window.location.search);
+  if(params.get('shared')!=='1')return;
+  try{
+    const response=await fetch('/android-shared-tlog/meta',{cache:'no-store'});
+    const meta=await response.json();
+    if(!meta?.available)return;
+    const sharedFile={
+      name:String(meta.name||'shared.tlog'),
+      size:Number(meta.size||0),
+      _androidShared:true
+    };
+    if(!setSelectedTlog(sharedFile))return;
+    setTimeout(()=>UI.btn.click(),180);
+  }catch(error){
+    UI.error.textContent='❌ Не вдалося отримати TLOG з Android: '+(error?.message||error);
+    UI.error.style.display='block';
+  }
+}
+
 /* Штатний вибір через Провідник лишається без змін */
 UI.input.addEventListener('change',e=>{
   setSelectedTlog(e.target.files?.[0]);
 });
+
+setTimeout(importAndroidSharedTlog,0);
 
 /* Перетягування TLOG прямо на існуюче вікно вибору */
 UI.uploadZone.addEventListener('dragenter',e=>{
@@ -2618,6 +2642,22 @@ async function analyzeOnServer(file){
   const timeout=setTimeout(()=>controller.abort(),600000);
 
   try{
+    if(file?._androidShared){
+      const response=await fetch('/android-shared-tlog/analyze',{
+        method:'POST',
+        signal:controller.signal
+      });
+      const text=await response.text();
+      if(!response.ok){
+        throw new Error('Локальний Android API HTTP '+response.status+': '+text.slice(0,1000));
+      }
+      try{
+        return JSON.parse(text);
+      }catch(e){
+        throw new Error('Локальний Android API повернув не JSON: '+text.slice(0,1000));
+      }
+    }
+
     const formData=new FormData();
     formData.append('file',file,file.name);
     const useVideoAssist=canRunVideoAssistedAnalysis();
