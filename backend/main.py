@@ -1388,11 +1388,14 @@ def get_vtx_state(ch7_pwm, ch8_pwm):
 
 def parse_initial_pos_ned(text):
     """
-    Parses messages such as:
-      EKF3 IMU0 initial pos NED = 0.0,0.0,0.0 (m)
-      EKF3 IMU0 initial pos NED = -0.1,0.4,0.8,0.0 (m)
+    Parse original EKF/VISP initial-position text.
 
-    Returns (N, E, D) for the first three values, or None.
+    Older logs may contain three or more N/E/D values, while VISP 1.3.4+
+    can report the false optical zero as only two values, for example:
+      initial pos NED = 0.0,0.0 (m)
+      initial pos NED = -0.1,0.0 (m)
+
+    Return the first up-to-three numeric values. At least two are required.
     """
     if not text:
         return None
@@ -1412,45 +1415,43 @@ def parse_initial_pos_ned(text):
 
     nums = re.findall(r"[-+]?\d+(?:\.\d+)?", values_part)
 
-    if len(nums) < 3:
+    if len(nums) < 2:
         return None
 
     try:
-        return (
-            float(nums[0]),
-            float(nums[1]),
-            float(nums[2]),
-        )
+        return tuple(float(v) for v in nums[:3])
     except (TypeError, ValueError):
         return None
 
 
 def is_primary_false_ned(coords, limit=0.9, visp_version=None):
     """
-    Detect the false/initial optical NED origin.
+    Detect the false/initial optical origin.
 
-    Legacy VISP profiles keep the historical rule: any small N/E/D values
-    within ±limit may be treated as the false initial origin.
+    VISP >= 1.3.4 uses only the first TWO reported values:
+      - 0.0,0.0 (m), or
+      - a small two-value origin within ±limit containing a negative value.
 
-    VISP >= 1.3.4 uses the stricter field rule:
-      - exact zero origin (0.0, 0.0, 0.0), or
-      - a small origin within ±limit that contains at least one negative value.
-    Small positive-only coordinates such as 0.1,0.2,0.3 are not treated as
-    the false zero for VISP 1.3.4+.
+    Legacy VISP keeps the historical three-value small-NED rule.
     """
-    if not coords or len(coords) < 3:
-        return False
-
-    values = tuple(float(v) for v in coords[:3])
-    if not all(abs(v) <= limit for v in values):
+    if not coords:
         return False
 
     if visp_version is not None and tuple(visp_version) >= (1, 3, 4):
+        if len(coords) < 2:
+            return False
+        values = tuple(float(v) for v in coords[:2])
+        if not all(abs(v) <= limit for v in values):
+            return False
         exact_zero = all(abs(v) < 0.0005 for v in values)
         has_negative = any(v < -0.0005 for v in values)
         return exact_zero or has_negative
 
-    return True
+    if len(coords) < 3:
+        return False
+
+    values = tuple(float(v) for v in coords[:3])
+    return all(abs(v) <= limit for v in values)
 
 
 def format_ned(coords):
