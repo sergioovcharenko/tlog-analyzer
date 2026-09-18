@@ -1302,6 +1302,39 @@ TX16_SWITCH_CHANNELS = {
     "SC": 15,
 }
 
+# CH5 — six-position flight-mode selector used on this aircraft.
+# This mapping is internal analysis metadata only; CH5 is not added as a
+# separate Timeline/UI card.
+CH5_FLIGHT_MODE_BUTTONS = {
+    1: "ALT_HOLD",
+    2: "LOITER",
+    3: "LAND",
+    4: "RTL",
+    5: "ALT_HOLD-L",
+    6: "ALT_HOLD",
+}
+
+def ch5_mode_button(pwm):
+    """Return CH5 button number 1..6 from ArduPilot six-position PWM ranges."""
+    if not valid_number(pwm):
+        return None
+    pwm = float(pwm)
+    if pwm <= 1230:
+        return 1
+    if pwm <= 1360:
+        return 2
+    if pwm <= 1490:
+        return 3
+    if pwm <= 1620:
+        return 4
+    if pwm <= 1749:
+        return 5
+    return 6
+
+def ch5_mode_name(pwm):
+    button = ch5_mode_button(pwm)
+    return CH5_FLIGHT_MODE_BUTTONS.get(button) if button is not None else None
+
 def tx16_two_position_state(pwm):
     """Return OFF/ON for a two-position RC switch, or None in transition/invalid zone."""
     if not valid_number(pwm):
