@@ -1451,7 +1451,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .ai-expert-session.severity-warning{border-left:4px solid var(--warning)}
 .ai-expert-session.severity-info{border-left:4px solid var(--success)}
 .ai-expert-session-badge{font-size:10px;letter-spacing:.35px;text-transform:uppercase;color:var(--text-muted);border:1px solid var(--border-highlight);border-radius:999px;padding:2px 7px}
-.ai-expert-aircraft{font-size:11px;font-weight:900;letter-spacing:.25px;color:#93c5fd;border:1px solid rgba(59,130,246,.55);background:rgba(59,130,246,.10);border-radius:6px;padding:3px 8px}
+.ai-expert-aircraft{font-size:11px;font-weight:900;letter-spacing:.25px;color:#fff;border:1px solid rgba(255,255,255,.88);background:rgba(255,255,255,.04);border-radius:6px;padding:3px 8px}
 .ai-expert-session-meta{color:var(--text-muted);font-size:12px;font-weight:600;margin-left:auto}
 .ai-expert-body{padding:0 14px 15px;border-top:1px solid var(--border-color)}
 .ai-expert-conclusion{margin:12px 0;font-weight:700;line-height:1.5}
@@ -3724,9 +3724,16 @@ function renderAiExpert(expert){
     badge.className='ai-expert-session-badge';
     badge.textContent=session.classification==='flight'?'ПОЛІТ':session.classification==='arm_check'?'КОРОТКА ARM-ПЕРЕВІРКА':'НЕВИЗНАЧЕНА';
     const aircraftTypes=Array.isArray(session.aircraft_types)?session.aircraft_types.filter(Boolean):[];
+    const serialRaw=Number(session.aircraft_serial_number);
+    const serialLength=Math.max(1,Number(session.aircraft_serial_length)||6);
+    const serialDigits=Number.isFinite(serialRaw)?String(Math.trunc(serialRaw)).padStart(serialLength,'0'):null;
+    const serialText=serialDigits
+      ?(serialDigits.length===6?serialDigits.slice(0,3)+'-'+serialDigits.slice(3):serialDigits)
+      :null;
     const aircraft=document.createElement('span');
     aircraft.className='ai-expert-aircraft';
-    aircraft.textContent=aircraftTypes.length?aircraftTypes.join(' / '):'БпЛА: НЕ ВИЗНАЧЕНО';
+    const aircraftName=aircraftTypes.length?aircraftTypes.join(' / '):'БпЛА: НЕ ВИЗНАЧЕНО';
+    aircraft.textContent=serialText?aircraftName+' • SN '+serialText:aircraftName;
     const meta=document.createElement('span');
     meta.className='ai-expert-session-meta';
     const endState=session.ended_with_disarm?`DISARM ${formatExpertTime(session.end_s)}`:session.ended_by_log?'DISARM не зафіксовано':'завершення невідоме';
