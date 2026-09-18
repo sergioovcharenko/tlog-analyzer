@@ -1060,6 +1060,8 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
         selected_aircraft = flight_type_events[-1] if flight_type_events else None
         s["aircraftBoardType"] = selected_aircraft.get("boardType") if selected_aircraft else None
         s["aircraftType"] = selected_aircraft.get("aircraftType") if selected_aircraft else None
+        s["aircraftSerialNumber"] = selected_aircraft.get("serialNumber") if selected_aircraft else None
+        s["aircraftSerialLength"] = selected_aircraft.get("serialLength") if selected_aircraft else None
 
         for ev in evs:
             if valid_number(ev.get("alt")):
@@ -1144,7 +1146,7 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
         s["maxTilt"]=round(float(s["maxTilt"]),1)
 
     for ev in raw_timeline:
-        ev["flightNumber"]=None; ev["takeoffEpisodeNumber"]=None; ev["aircraftType"]=None; ev["aircraftBoardType"]=None
+        ev["flightNumber"]=None; ev["takeoffEpisodeNumber"]=None; ev["aircraftType"]=None; ev["aircraftBoardType"]=None; ev["aircraftSerialNumber"]=None; ev["aircraftSerialLength"]=None
         ts=ev.get("timestamp")
         if ts is None: continue
         for s in sessions:
@@ -1152,6 +1154,8 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
                 ev["flightNumber"]=s["number"]
                 ev["aircraftType"]=s.get("aircraftType")
                 ev["aircraftBoardType"]=s.get("aircraftBoardType")
+                ev["aircraftSerialNumber"]=s.get("aircraftSerialNumber")
+                ev["aircraftSerialLength"]=s.get("aircraftSerialLength")
                 for ep in s["takeoffEpisodes"]:
                     if ts>=ep["startTimestamp"] and (ep.get("endTimestamp") is None or ts<=ep["endTimestamp"]):
                         ev["takeoffEpisodeNumber"]=ep["number"]; break
@@ -1165,33 +1169,38 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
         r=clone_near(s["armTimestamp"])
         r.update(timestamp=s["armTimestamp"],system_text="",analysis_text=f"🟢 ПОЛІТ №{s['number']} — ПОЧАТОК СЕСІЇ / ARM",
                  eventType="FLIGHT_SESSION_START",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None,
-                 aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
+                 aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"),
+                 aircraftSerialNumber=s.get("aircraftSerialNumber"),aircraftSerialLength=s.get("aircraftSerialLength"))
         markers.append(r)
         for ep in s["takeoffEpisodes"]:
             r=clone_near(ep["startTimestamp"])
             r.update(timestamp=ep["startTimestamp"],
                      system_text="",analysis_text=f"↗ {'ПОВТОРНИЙ ЗЛІТ' if ep['number']>1 else 'ЗЛІТ'} — політ №{s['number']}, епізод {ep['number']}",
                      eventType="FLIGHT_TAKEOFF",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"],
-                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"),
+                 aircraftSerialNumber=s.get("aircraftSerialNumber"),aircraftSerialLength=s.get("aircraftSerialLength"))
             markers.append(r)
             if ep.get("endTimestamp") is not None and ep.get("endReason")=="landed":
                 r=clone_near(ep["endTimestamp"])
                 r.update(timestamp=ep["endTimestamp"],
                          system_text="",analysis_text=f"↘ ПОСАДКА — політ №{s['number']}, епізод {ep['number']} завершено БЕЗ DISARM",
                          eventType="FLIGHT_LANDING",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"],
-                         aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
+                         aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"),
+                 aircraftSerialNumber=s.get("aircraftSerialNumber"),aircraftSerialLength=s.get("aircraftSerialLength"))
                 markers.append(r)
         if s.get("disarmTimestamp") is not None:
             r=clone_near(s["disarmTimestamp"])
             r.update(timestamp=s["disarmTimestamp"],system_text="",analysis_text=f"🔵 ПОЛІТ №{s['number']} — ЗАВЕРШЕННЯ СЕСІЇ / DISARM",
                      eventType="FLIGHT_SESSION_END",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None,
-                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"),
+                 aircraftSerialNumber=s.get("aircraftSerialNumber"),aircraftSerialLength=s.get("aircraftSerialLength"))
             markers.append(r)
         elif s.get("endedArmed"):
             r=clone_near(s["endTimestamp"])
             r.update(timestamp=s["endTimestamp"],system_text="",analysis_text=f"🚨 ПОЛІТ №{s['number']} — TLOG ЗАВЕРШИВСЯ ПРИ ARMED",
                      eventType="FLIGHT_SESSION_OPEN_AT_END",is_error=True,flightNumber=s["number"],takeoffEpisodeNumber=None,
-                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"),
+                 aircraftSerialNumber=s.get("aircraftSerialNumber"),aircraftSerialLength=s.get("aircraftSerialLength"))
             markers.append(r)
 
     raw_timeline.extend(markers)
@@ -1761,6 +1770,12 @@ async def analyze(file: UploadFile = File(...)):
             4: "ZOOM-N",
         }
         aircraft_type_events = []
+        aircraft_identity_state = {
+            "boardType": None,
+            "aircraftType": None,
+            "serialNumber": None,
+            "serialLength": None,
+        }
         visp_134_present = False
 
         # STATUSTEXT MAVLink2 chunks
@@ -2497,15 +2512,32 @@ async def analyze(file: UploadFile = File(...)):
                     if param_id in land_params and valid_number(value):
                         land_params[param_id] = float(value)
 
+                    identity_changed = False
+
                     if param_id == "FL_BRDTYPE" and valid_number(value):
                         board_type = int(round(float(value)))
                         aircraft_name = aircraft_type_names.get(board_type)
                         if aircraft_name is not None:
-                            aircraft_type_events.append({
-                                "timestamp": float(current_timestamp),
-                                "boardType": board_type,
-                                "aircraftType": aircraft_name,
-                            })
+                            aircraft_identity_state["boardType"] = board_type
+                            aircraft_identity_state["aircraftType"] = aircraft_name
+                            identity_changed = True
+
+                    elif param_id == "FL_SN" and valid_number(value):
+                        aircraft_identity_state["serialNumber"] = int(round(float(value)))
+                        identity_changed = True
+
+                    elif param_id in ("FL_SNLENGHT", "FL_SNLENGTH") and valid_number(value):
+                        aircraft_identity_state["serialLength"] = max(1, int(round(float(value))))
+                        identity_changed = True
+
+                    if identity_changed:
+                        aircraft_type_events.append({
+                            "timestamp": float(current_timestamp),
+                            "boardType": aircraft_identity_state.get("boardType"),
+                            "aircraftType": aircraft_identity_state.get("aircraftType"),
+                            "serialNumber": aircraft_identity_state.get("serialNumber"),
+                            "serialLength": aircraft_identity_state.get("serialLength"),
+                        })
                 except Exception:
                     pass
 
@@ -3988,6 +4020,8 @@ async def analyze(file: UploadFile = File(...)):
                     "takeoffEpisodeNumber": ev.get("takeoffEpisodeNumber"),
                     "aircraftType": ev.get("aircraftType"),
                     "aircraftBoardType": ev.get("aircraftBoardType"),
+                    "aircraftSerialNumber": ev.get("aircraftSerialNumber"),
+                    "aircraftSerialLength": ev.get("aircraftSerialLength"),
                     "systemText": ev.get("system_text", ""),
                     "analysisText": ev.get("analysis_text", ""),
                     "pilotText": ev.get("pilot_text", ""),
