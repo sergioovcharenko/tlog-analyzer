@@ -41,7 +41,7 @@ chaquopy {
             install "pydantic==1.10.13"
             install "uvicorn==0.23.2"
             install "python-multipart==0.0.6"
-            install "pymavlink==2.4.47"
+            install "pymavlink==2.4.41"
         }
     }
 }
