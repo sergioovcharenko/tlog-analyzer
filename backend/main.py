@@ -1428,9 +1428,9 @@ def is_primary_false_ned(coords, limit=0.9, visp_version=None):
     """
     Detect the false/initial optical origin.
 
-    VISP >= 1.3.4 uses only the first TWO reported values:
-      - 0.0,0.0 (m), or
-      - a small two-value origin within ±limit containing a negative value.
+    VISP >= 1.3.4 uses only the first TWO reported values.
+    Any pair inside ±limit is treated as the false optical origin,
+    including 0.0,0.0 (m), positive-only, negative-only, or mixed values.
 
     Legacy VISP keeps the historical three-value small-NED rule.
     """
@@ -1441,11 +1441,7 @@ def is_primary_false_ned(coords, limit=0.9, visp_version=None):
         if len(coords) < 2:
             return False
         values = tuple(float(v) for v in coords[:2])
-        if not all(abs(v) <= limit for v in values):
-            return False
-        exact_zero = all(abs(v) < 0.0005 for v in values)
-        has_negative = any(v < -0.0005 for v in values)
-        return exact_zero or has_negative
+        return all(abs(v) <= limit for v in values)
 
     if len(coords) < 3:
         return False
