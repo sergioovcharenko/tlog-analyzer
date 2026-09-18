@@ -1776,7 +1776,7 @@ async def analyze(file: UploadFile = File(...)):
             "serialNumber": None,
             "serialLength": None,
         }
-        visp_134_present = False
+        visp_version = None
 
         # STATUSTEXT MAVLink2 chunks
         statustext_chunks = {}
@@ -2170,12 +2170,15 @@ async def analyze(file: UploadFile = File(...)):
             nonlocal accel_calibration_start_ts, accel_calibration_end_ts
             nonlocal accel_calibration_events
             nonlocal attitude_critical_active, attitude_critical_peak
-            nonlocal visp_134_present
+            nonlocal visp_version
 
             txt_lower = full_txt.lower()
 
-            if re.search(r"\bvisp\b[^\n]*\b1\.3\.4\b", txt_lower):
-                visp_134_present = True
+            visp_match = re.search(r"\bvisp\b[^\n]*?\b(\d+)\.(\d+)\.(\d+)\b", txt_lower)
+            if visp_match:
+                detected_visp = tuple(int(part) for part in visp_match.groups())
+                if visp_version is None or detected_visp > visp_version:
+                    visp_version = detected_visp
 
             if "no rangefinder" in txt_lower or "visp: no rangefinder" in txt_lower:
                 rangefinder_failed_flag = True
@@ -5251,12 +5254,19 @@ async def analyze(file: UploadFile = File(...)):
                     "drop": True,
                 })
 
+            loiter_profile = None
+            if visp_version is not None:
+                if visp_version <= (1, 3, 2):
+                    loiter_profile = "legacy_50_300"
+                elif visp_version >= (1, 3, 4):
+                    loiter_profile = "modern_10_500"
+
             ai_expert = build_ai_expert_analysis(
                 timeline=timeline,
                 radio_events=_expert_radio_events,
                 thrust_events=_expert_thrust_events,
                 rpm_events=_expert_rpm_events,
-                loiter_rule_enabled=visp_134_present,
+                loiter_profile=loiter_profile,
             )
         except Exception as exc:
             ai_expert_warning = f"Поглиблений аналіз недоступний: {exc}"
