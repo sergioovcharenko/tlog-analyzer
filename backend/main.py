@@ -354,7 +354,7 @@ def circular_weighted_mean(samples):
     return angle, max(0.0, min(1.0, resultant))
 
 
-def analyze_antenna_direction(raw_timeline, arm_timestamp):
+def analyze_antenna_direction(raw_timeline, arm_timestamp, origin_ne=None):
     """
     Оцінка фізичного напрямку антенної станції (АС) та втрати зв'язку.
 
@@ -388,6 +388,11 @@ def analyze_antenna_direction(raw_timeline, arm_timestamp):
         "flightPathSampleCount": 0,
         "flightPathGoodSignalFraction": 0.0,
         "flightPathMaxDistance": 0.0,
+        "originNE": (
+            [round(float(origin_ne[0]), 3), round(float(origin_ne[1]), 3)]
+            if origin_ne is not None and len(origin_ne) >= 2
+            else None
+        ),
 
         "longLossEpisodes": [],
         "probableSectorExitCount": 0,
@@ -425,6 +430,30 @@ def analyze_antenna_direction(raw_timeline, arm_timestamp):
         dist = ev.get("distValue")
         dbm = ev.get("dbm")
         mode = str(ev.get("mode") or "").upper().replace(" ", "_")
+
+        # VISP 1.3.4+ can provide a two-value false origin via
+        # "initial pos NE = N,E (m)". When available, normalize every
+        # LOCAL_POSITION_NED sample to that origin before calculating the
+        # antenna geometry. This keeps antenna direction aligned with the
+        # trajectory/map origin instead of using raw N/E coordinates.
+        ned_n = ev.get("nedNorth")
+        ned_e = ev.get("nedEast")
+        if (
+            origin_ne is not None
+            and len(origin_ne) >= 2
+            and valid_number(ned_n)
+            and valid_number(ned_e)
+        ):
+            norm_n = float(ned_n) - float(origin_ne[0])
+            norm_e = float(ned_e) - float(origin_ne[1])
+            norm_dist = math.sqrt(norm_n * norm_n + norm_e * norm_e)
+
+            if norm_dist >= 0.5:
+                pos_az = (math.degrees(math.atan2(norm_e, norm_n)) + 360.0) % 360.0
+            else:
+                pos_az = None
+
+            dist = norm_dist
 
         snapshots.append({
             "timestamp": float(ts),
@@ -4034,7 +4063,26 @@ async def analyze(file: UploadFile = File(...)):
         _perf_timeline_start = time.perf_counter()
 
         # Estimate antenna pointing from NED position azimuth + dBm.
-        antenna_analysis = analyze_antenna_direction(raw_timeline, first_flight_arm_timestamp)
+        # For VISP 1.3.4+, use the detected two-value initial pos NE as the
+        # geometric origin so antenna direction, route and distance share the
+        # same reference point.
+        antenna_origin_ne = None
+        if (
+            visp_version is not None
+            and tuple(visp_version) >= (1, 3, 4)
+            and primary_false_ned_coords is not None
+            and len(primary_false_ned_coords) >= 2
+        ):
+            antenna_origin_ne = (
+                float(primary_false_ned_coords[0]),
+                float(primary_false_ned_coords[1]),
+            )
+
+        antenna_analysis = analyze_antenna_direction(
+            raw_timeline,
+            first_flight_arm_timestamp,
+            origin_ne=antenna_origin_ne,
+        )
 
         # Timeline
         # 00:00.000 = момент ARM.
