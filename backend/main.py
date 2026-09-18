@@ -2326,7 +2326,11 @@ async def analyze(file: UploadFile = File(...)):
                     "mode": mode,
                     "coords": ned_coords,
                     "text": full_txt,
-                    "isSmallPrimaryCandidate": is_primary_false_ned(ned_coords, visp_version=visp_version),
+                    # Recomputed after the whole TLOG is parsed, once the final
+                    # VISP version is known. This avoids classifying a VISP 1.3.4
+                    # two-value origin with the legacy rule just because the VISP
+                    # STATUSTEXT appeared later in the stream.
+                    "isSmallPrimaryCandidate": None,
                 }
                 ned_initializations.append(item)
 
@@ -3440,6 +3444,14 @@ async def analyze(file: UploadFile = File(...)):
         primary_false_ned_coords = None
         primary_false_ned_timestamp = None
         primary_false_ned_text = None
+
+        # Classify false/initial coordinates only after the complete TLOG has
+        # been read, so the final detected VISP version is available.
+        for item in ned_initializations:
+            item["isSmallPrimaryCandidate"] = is_primary_false_ned(
+                item.get("coords"),
+                visp_version=visp_version,
+            )
 
         small_candidates = [
             item
