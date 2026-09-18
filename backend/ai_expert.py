@@ -311,12 +311,16 @@ def _analyze_session(session, radio_events, thrust_events, rpm_events, *, loiter
     for row in session.get("rows") or []:
         aircraft_name = row.get("aircraftType")
         board_type = row.get("aircraftBoardType")
+        serial_number = row.get("aircraftSerialNumber")
+        serial_length = row.get("aircraftSerialLength")
         flight_number = row.get("flightNumber")
         if aircraft_name:
             pair = {
                 "flightNumber": flight_number,
                 "aircraftType": aircraft_name,
                 "aircraftBoardType": board_type,
+                "serialNumber": serial_number,
+                "serialLength": serial_length,
             }
             if pair not in aircraft_pairs:
                 aircraft_pairs.append(pair)
@@ -335,6 +339,8 @@ def _analyze_session(session, radio_events, thrust_events, rpm_events, *, loiter
         "ended_by_log": bool(session.get("ended_by_log")),
         "aircraft_type": aircraft_types[0] if len(aircraft_types) == 1 else None,
         "aircraft_types": aircraft_types,
+        "aircraft_serial_number": next((item.get("serialNumber") for item in aircraft_pairs if item.get("serialNumber") is not None), None),
+        "aircraft_serial_length": next((item.get("serialLength") for item in aircraft_pairs if item.get("serialLength") is not None), None),
         "flight_aircraft": aircraft_pairs,
         "overall_severity": severity,
         "short_conclusion": _short_conclusion(session, subsystems),
