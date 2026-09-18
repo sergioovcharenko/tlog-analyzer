@@ -61,35 +61,188 @@ def _parse_rate(value):
         return 0.0
 
 
-def _ffmpeg_executable():
-    import imageio_ffmpeg
+def _iter_iso_boxes(stream, start, end):
+    import struct
 
-    return imageio_ffmpeg.get_ffmpeg_exe()
+    pos = int(start)
+    stream.seek(pos)
+    while pos + 8 <= end:
+        stream.seek(pos)
+        header = stream.read(8)
+        if len(header) < 8:
+            break
+        size, box_type = struct.unpack(">I4s", header)
+        header_size = 8
+        if size == 1:
+            ext = stream.read(8)
+            if len(ext) < 8:
+                break
+            size = struct.unpack(">Q", ext)[0]
+            header_size = 16
+        elif size == 0:
+            size = end - pos
+
+        if size < header_size or pos + size > end:
+            break
+
+        yield box_type, pos + header_size, pos + size
+        pos += size
+
+
+def _find_child(stream, start, end, wanted):
+    for box_type, payload_start, box_end in _iter_iso_boxes(stream, start, end):
+        if box_type == wanted:
+            return payload_start, box_end
+    return None
+
+
+def _read_mvhd_duration(stream, start, end):
+    import struct
+
+    stream.seek(start)
+    head = stream.read(min(40, end - start))
+    if len(head) < 20:
+        return None
+    version = head[0]
+    if version == 1:
+        if len(head) < 32:
+            return None
+        timescale = struct.unpack(">I", head[20:24])[0]
+        duration = struct.unpack(">Q", head[24:32])[0]
+    else:
+        timescale = struct.unpack(">I", head[12:16])[0]
+        duration = struct.unpack(">I", head[16:20])[0]
+    if not timescale:
+        return None
+    return float(duration) / float(timescale)
+
+
+def _read_tkhd_size(stream, start, end):
+    import struct
+
+    # Width and height are the final two 16.16 fixed-point values in tkhd.
+    if end - start < 8:
+        return None
+    stream.seek(end - 8)
+    raw = stream.read(8)
+    if len(raw) != 8:
+        return None
+    width_fixed, height_fixed = struct.unpack(">II", raw)
+    width = int(round(width_fixed / 65536.0))
+    height = int(round(height_fixed / 65536.0))
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _read_mdhd_timescale(stream, start, end):
+    import struct
+
+    stream.seek(start)
+    head = stream.read(min(32, end - start))
+    if len(head) < 16:
+        return None
+    version = head[0]
+    if version == 1:
+        if len(head) < 24:
+            return None
+        return struct.unpack(">I", head[20:24])[0]
+    return struct.unpack(">I", head[12:16])[0]
+
+
+def _read_stts_fps(stream, start, end, timescale):
+    import struct
+
+    if not timescale:
+        return 0.0
+    stream.seek(start)
+    head = stream.read(8)
+    if len(head) < 8:
+        return 0.0
+    entry_count = struct.unpack(">I", head[4:8])[0]
+    total_samples = 0
+    total_ticks = 0
+    for _ in range(min(entry_count, 100000)):
+        raw = stream.read(8)
+        if len(raw) < 8:
+            break
+        count, delta = struct.unpack(">II", raw)
+        total_samples += count
+        total_ticks += count * delta
+    if total_samples <= 0 or total_ticks <= 0:
+        return 0.0
+    return float(total_samples) * float(timescale) / float(total_ticks)
 
 
 def probe_video(path):
-    import imageio_ffmpeg
+    """Read MP4/MOV metadata without FFmpeg or network access."""
+    import os
 
-    frames = imageio_ffmpeg.read_frames(str(path), pix_fmt="rgb24")
-    try:
-        metadata = next(frames)
-    except StopIteration as exc:
-        raise ValueError("Video stream not found") from exc
-    finally:
-        frames.close()
+    file_size = os.path.getsize(path)
+    duration = None
+    video_width = 0
+    video_height = 0
+    video_fps = 0.0
 
-    size = metadata.get("size") or metadata.get("source_size") or (0, 0)
-    try:
-        width = int(size[0])
-        height = int(size[1])
-    except (TypeError, ValueError, IndexError) as exc:
-        raise ValueError("Video metadata is incomplete") from exc
+    with open(path, "rb") as stream:
+        moov = _find_child(stream, 0, file_size, b"moov")
+        if not moov:
+            raise ValueError("MP4/MOV metadata (moov) not found")
+        moov_start, moov_end = moov
 
-    duration = float(metadata.get("duration") or 0.0)
-    fps = _parse_rate(metadata.get("fps"))
-    if duration <= 0 or width <= 0 or height <= 0:
+        mvhd = _find_child(stream, moov_start, moov_end, b"mvhd")
+        if mvhd:
+            duration = _read_mvhd_duration(stream, *mvhd)
+
+        for box_type, trak_start, trak_end in _iter_iso_boxes(stream, moov_start, moov_end):
+            if box_type != b"trak":
+                continue
+
+            tkhd = _find_child(stream, trak_start, trak_end, b"tkhd")
+            size = _read_tkhd_size(stream, *tkhd) if tkhd else None
+            if not size:
+                continue
+
+            mdia = _find_child(stream, trak_start, trak_end, b"mdia")
+            if not mdia:
+                continue
+
+            hdlr = _find_child(stream, mdia[0], mdia[1], b"hdlr")
+            if hdlr:
+                stream.seek(hdlr[0])
+                data = stream.read(min(24, hdlr[1] - hdlr[0]))
+                if len(data) >= 12 and data[8:12] != b"vide":
+                    continue
+
+            video_width, video_height = size
+
+            mdhd = _find_child(stream, mdia[0], mdia[1], b"mdhd")
+            timescale = _read_mdhd_timescale(stream, *mdhd) if mdhd else None
+
+            minf = _find_child(stream, mdia[0], mdia[1], b"minf")
+            if minf:
+                stbl = _find_child(stream, minf[0], minf[1], b"stbl")
+                if stbl:
+                    stts = _find_child(stream, stbl[0], stbl[1], b"stts")
+                    if stts:
+                        video_fps = _read_stts_fps(stream, *stts, timescale)
+            break
+
+    if not duration or duration <= 0 or video_width <= 0 or video_height <= 0:
         raise ValueError("Video metadata is incomplete")
-    return {"durationSec": duration, "width": width, "height": height, "fps": fps}
+
+    return {
+        "durationSec": float(duration),
+        "width": int(video_width),
+        "height": int(video_height),
+        "fps": float(video_fps or 0.0),
+    }
+
+
+def extract_frame(path, time_sec, output_path):
+    raise RuntimeError(
+        "Frame extraction is not used by the current /analyze-video endpoint on Android"
+    )
 
 
 def build_sample_times(duration_sec, normal_fps=1.0, dense_windows=None):
