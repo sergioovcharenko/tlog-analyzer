@@ -1390,10 +1390,11 @@ def parse_initial_pos_ned(text):
     """
     Parse original EKF/VISP initial-position text.
 
-    Older logs may contain three or more N/E/D values, while VISP 1.3.4+
-    can report the false optical zero as only two values, for example:
-      initial pos NED = 0.0,0.0 (m)
-      initial pos NED = -0.1,0.0 (m)
+    Older logs may contain three or more N/E/D values using "initial pos NED",
+    while VISP 1.3.4+ reports the false optical zero as two N/E values using
+    "initial pos NE", for example:
+      initial pos NE = 0.0,0.0 (m)
+      initial pos NE = -0.1,0.0 (m)
 
     Return the first up-to-three numeric values. At least two are required.
     """
@@ -1402,7 +1403,12 @@ def parse_initial_pos_ned(text):
 
     text = clean_text(text)
 
-    if "initial pos NED" not in text or "=" not in text:
+    if "=" not in text:
+        return None
+
+    # VISP 1.3.4+ uses "initial pos NE" (two values), while older firmware
+    # uses "initial pos NED" (three or more values).
+    if not re.search(r"\binitial\s+pos\s+NE(?:D)?\b", text, flags=re.IGNORECASE):
         return None
 
     values_part = text.split("=", 1)[1]
@@ -2317,7 +2323,7 @@ async def analyze(file: UploadFile = File(...)):
                     ],
                 })
 
-            # Save every original "initial pos NED" found in the TLOG.
+            # Save every original "initial pos NE" / "initial pos NED" found in the TLOG.
             ned_coords = parse_initial_pos_ned(full_txt)
 
             if ned_coords is not None:
@@ -3436,7 +3442,7 @@ async def analyze(file: UploadFile = File(...)):
         # Допускаємо змішані значення в межах приблизно -0.9 ... +0.9 м.
         #
         # Головний критерій за фактичними логами:
-        # беремо ПЕРШИЙ малий "initial pos NED", який реально записаний
+        # беремо ПЕРШИЙ малий "initial pos NE/NED", який реально записаний
         # у LOITER. Не прив'язуємо його до жорсткого вікна 5/15/60 секунд,
         # бо STATUSTEXT може з'явитися пізніше від самого HEARTBEAT/зміни режиму.
 
@@ -4467,17 +4473,27 @@ async def analyze(file: UploadFile = File(...)):
             if primary_false_ned_detected:
                 ned_text = format_ned(primary_false_ned_coords)
 
+                coord_label = "initial pos NE" if len(primary_false_ned_coords or ()) == 2 else "initial pos NED"
+                axis_label = "N/E" if coord_label == "initial pos NE" else "N/E/D"
+
                 ai_alerts.append(
                     "✅ <b>Первинні хибні координати відбито:</b> "
                     "при першому переході в LOITER у TLOG зафіксовано "
-                    f"initial pos NED = {ned_text} м. "
+                    f"{coord_label} = {ned_text} м. "
                     "Початкову точку External/Optical Nav встановлено."
                 )
             else:
+                expected_coord_label = (
+                    "initial pos NE"
+                    if visp_version is not None and tuple(visp_version) >= (1, 3, 4)
+                    else "initial pos NED"
+                )
+                expected_axis_label = "N/E" if expected_coord_label == "initial pos NE" else "N/E/D"
+
                 ai_alerts.append(
                     "⚠️ <b>Первинні хибні координати не зафіксовано:</b> "
-                    "у TLOG не знайдено малого initial pos NED "
-                    "приблизно в межах -0.9…+0.9 м по N/E/D "
+                    f"у TLOG не знайдено малого {expected_coord_label} "
+                    f"приблизно в межах -0.9…+0.9 м по {expected_axis_label} "
                     "для первинної роботи LOITER."
                 )
 
