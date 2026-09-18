@@ -997,7 +997,7 @@ def analyze_antenna_direction(raw_timeline, arm_timestamp):
     return result
 
 
-def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltage_samples=None, battery_current_samples=None):
+def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltage_samples=None, battery_current_samples=None, aircraft_type_events=None):
     """One flight = ARM->DISARM. Re-takeoff without DISARM stays in same flight.
 
     V23.26: min/max battery values are calculated from every armed SYS_STATUS
@@ -1006,6 +1006,7 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
     """
     battery_voltage_samples = battery_voltage_samples or []
     battery_current_samples = battery_current_samples or []
+    aircraft_type_events = sorted(aircraft_type_events or [], key=lambda item: item.get("timestamp", 0.0))
     events=sorted([e for e in raw_timeline if e.get("timestamp") is not None],
                   key=lambda e:e["timestamp"])
     sessions=[]
@@ -1041,6 +1042,24 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
     for s in sessions:
         evs=[e for e in events if e["timestamp"]>=s["armTimestamp"] and
              (s["endTimestamp"] is None or e["timestamp"]<=s["endTimestamp"])]
+
+        # Detect the aircraft for this exact ARM->DISARM flight.
+        # Prefer FL_BRDTYPE sent inside the flight; otherwise use the latest
+        # known value before ARM.
+        flight_type_events = [
+            item for item in aircraft_type_events
+            if item.get("timestamp") is not None
+            and item["timestamp"] >= s["armTimestamp"]
+            and (s["endTimestamp"] is None or item["timestamp"] <= s["endTimestamp"])
+        ]
+        if not flight_type_events:
+            flight_type_events = [
+                item for item in aircraft_type_events
+                if item.get("timestamp") is not None and item["timestamp"] <= s["armTimestamp"]
+            ]
+        selected_aircraft = flight_type_events[-1] if flight_type_events else None
+        s["aircraftBoardType"] = selected_aircraft.get("boardType") if selected_aircraft else None
+        s["aircraftType"] = selected_aircraft.get("aircraftType") if selected_aircraft else None
 
         for ev in evs:
             if valid_number(ev.get("alt")):
@@ -1125,12 +1144,14 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
         s["maxTilt"]=round(float(s["maxTilt"]),1)
 
     for ev in raw_timeline:
-        ev["flightNumber"]=None; ev["takeoffEpisodeNumber"]=None
+        ev["flightNumber"]=None; ev["takeoffEpisodeNumber"]=None; ev["aircraftType"]=None; ev["aircraftBoardType"]=None
         ts=ev.get("timestamp")
         if ts is None: continue
         for s in sessions:
             if ts>=s["armTimestamp"] and (s["endTimestamp"] is None or ts<=s["endTimestamp"]):
                 ev["flightNumber"]=s["number"]
+                ev["aircraftType"]=s.get("aircraftType")
+                ev["aircraftBoardType"]=s.get("aircraftBoardType")
                 for ep in s["takeoffEpisodes"]:
                     if ts>=ep["startTimestamp"] and (ep.get("endTimestamp") is None or ts<=ep["endTimestamp"]):
                         ev["takeoffEpisodeNumber"]=ep["number"]; break
@@ -1143,29 +1164,34 @@ def analyze_flight_sessions(raw_timeline, log_end_timestamp=None, battery_voltag
     for s in sessions:
         r=clone_near(s["armTimestamp"])
         r.update(timestamp=s["armTimestamp"],system_text="",analysis_text=f"🟢 ПОЛІТ №{s['number']} — ПОЧАТОК СЕСІЇ / ARM",
-                 eventType="FLIGHT_SESSION_START",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None)
+                 eventType="FLIGHT_SESSION_START",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None,
+                 aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
         markers.append(r)
         for ep in s["takeoffEpisodes"]:
             r=clone_near(ep["startTimestamp"])
             r.update(timestamp=ep["startTimestamp"],
                      system_text="",analysis_text=f"↗ {'ПОВТОРНИЙ ЗЛІТ' if ep['number']>1 else 'ЗЛІТ'} — політ №{s['number']}, епізод {ep['number']}",
-                     eventType="FLIGHT_TAKEOFF",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"])
+                     eventType="FLIGHT_TAKEOFF",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"],
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
             markers.append(r)
             if ep.get("endTimestamp") is not None and ep.get("endReason")=="landed":
                 r=clone_near(ep["endTimestamp"])
                 r.update(timestamp=ep["endTimestamp"],
                          system_text="",analysis_text=f"↘ ПОСАДКА — політ №{s['number']}, епізод {ep['number']} завершено БЕЗ DISARM",
-                         eventType="FLIGHT_LANDING",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"])
+                         eventType="FLIGHT_LANDING",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=ep["number"],
+                         aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
                 markers.append(r)
         if s.get("disarmTimestamp") is not None:
             r=clone_near(s["disarmTimestamp"])
             r.update(timestamp=s["disarmTimestamp"],system_text="",analysis_text=f"🔵 ПОЛІТ №{s['number']} — ЗАВЕРШЕННЯ СЕСІЇ / DISARM",
-                     eventType="FLIGHT_SESSION_END",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None)
+                     eventType="FLIGHT_SESSION_END",is_error=False,flightNumber=s["number"],takeoffEpisodeNumber=None,
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
             markers.append(r)
         elif s.get("endedArmed"):
             r=clone_near(s["endTimestamp"])
             r.update(timestamp=s["endTimestamp"],system_text="",analysis_text=f"🚨 ПОЛІТ №{s['number']} — TLOG ЗАВЕРШИВСЯ ПРИ ARMED",
-                     eventType="FLIGHT_SESSION_OPEN_AT_END",is_error=True,flightNumber=s["number"],takeoffEpisodeNumber=None)
+                     eventType="FLIGHT_SESSION_OPEN_AT_END",is_error=True,flightNumber=s["number"],takeoffEpisodeNumber=None,
+                     aircraftType=s.get("aircraftType"),aircraftBoardType=s.get("aircraftBoardType"))
             markers.append(r)
 
     raw_timeline.extend(markers)
@@ -1727,6 +1753,16 @@ async def analyze(file: UploadFile = File(...)):
         raw_timeline = []
         last_snapshot_second = None
 
+        # Aircraft model / VISP profile detection.
+        aircraft_type_names = {
+            1: "LINZA-D",
+            2: "LINZA-N",
+            3: "ZOOM-D",
+            4: "ZOOM-N",
+        }
+        aircraft_type_events = []
+        visp_134_present = False
+
         # STATUSTEXT MAVLink2 chunks
         statustext_chunks = {}
 
@@ -2119,8 +2155,12 @@ async def analyze(file: UploadFile = File(...)):
             nonlocal accel_calibration_start_ts, accel_calibration_end_ts
             nonlocal accel_calibration_events
             nonlocal attitude_critical_active, attitude_critical_peak
+            nonlocal visp_134_present
 
             txt_lower = full_txt.lower()
+
+            if re.search(r"\bvisp\b[^\n]*\b1\.3\.4\b", txt_lower):
+                visp_134_present = True
 
             if "no rangefinder" in txt_lower or "visp: no rangefinder" in txt_lower:
                 rangefinder_failed_flag = True
@@ -2452,10 +2492,20 @@ async def analyze(file: UploadFile = File(...)):
                         param_id = str(raw_param_id)
                     param_id = param_id.strip("\x00 ").upper()
 
-                    if param_id in land_params:
-                        value = getattr(msg, "param_value", None)
-                        if valid_number(value):
-                            land_params[param_id] = float(value)
+                    value = getattr(msg, "param_value", None)
+
+                    if param_id in land_params and valid_number(value):
+                        land_params[param_id] = float(value)
+
+                    if param_id == "FL_BRDTYPE" and valid_number(value):
+                        board_type = int(round(float(value)))
+                        aircraft_name = aircraft_type_names.get(board_type)
+                        if aircraft_name is not None:
+                            aircraft_type_events.append({
+                                "timestamp": float(current_timestamp),
+                                "boardType": board_type,
+                                "aircraftType": aircraft_name,
+                            })
                 except Exception:
                     pass
 
@@ -3693,6 +3743,7 @@ async def analyze(file: UploadFile = File(...)):
             current_timestamp,
             battery_voltage_samples=battery_voltage_samples,
             battery_current_samples=battery_current_samples,
+            aircraft_type_events=aircraft_type_events,
         )
         first_flight_arm_timestamp = flight_sessions[0]["armTimestamp"] if flight_sessions else arm_timestamp
 
@@ -3935,6 +3986,8 @@ async def analyze(file: UploadFile = File(...)):
                     "verticalSpeedDown": ev.get("verticalSpeedDown"),
                     "flightNumber": ev.get("flightNumber"),
                     "takeoffEpisodeNumber": ev.get("takeoffEpisodeNumber"),
+                    "aircraftType": ev.get("aircraftType"),
+                    "aircraftBoardType": ev.get("aircraftBoardType"),
                     "systemText": ev.get("system_text", ""),
                     "analysisText": ev.get("analysis_text", ""),
                     "pilotText": ev.get("pilot_text", ""),
@@ -5169,6 +5222,7 @@ async def analyze(file: UploadFile = File(...)):
                 radio_events=_expert_radio_events,
                 thrust_events=_expert_thrust_events,
                 rpm_events=_expert_rpm_events,
+                loiter_rule_enabled=visp_134_present,
             )
         except Exception as exc:
             ai_expert_warning = f"Поглиблений аналіз недоступний: {exc}"
