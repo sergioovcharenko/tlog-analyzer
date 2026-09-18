@@ -1425,16 +1425,32 @@ def parse_initial_pos_ned(text):
         return None
 
 
-def is_primary_false_ned(coords, limit=0.9):
+def is_primary_false_ned(coords, limit=0.9, visp_version=None):
     """
-    Primary false/initial optical coordinates may be small non-zero values.
-    Examples: 0.1,0.2,0.3 or -0.1,0.4,-0.8.
-    All three N/E/D values must be within ±limit meters.
+    Detect the false/initial optical NED origin.
+
+    Legacy VISP profiles keep the historical rule: any small N/E/D values
+    within ±limit may be treated as the false initial origin.
+
+    VISP >= 1.3.4 uses the stricter field rule:
+      - exact zero origin (0.0, 0.0, 0.0), or
+      - a small origin within ±limit that contains at least one negative value.
+    Small positive-only coordinates such as 0.1,0.2,0.3 are not treated as
+    the false zero for VISP 1.3.4+.
     """
     if not coords or len(coords) < 3:
         return False
 
-    return all(abs(float(v)) <= limit for v in coords[:3])
+    values = tuple(float(v) for v in coords[:3])
+    if not all(abs(v) <= limit for v in values):
+        return False
+
+    if visp_version is not None and tuple(visp_version) >= (1, 3, 4):
+        exact_zero = all(abs(v) < 0.0005 for v in values)
+        has_negative = any(v < -0.0005 for v in values)
+        return exact_zero or has_negative
+
+    return True
 
 
 def format_ned(coords):
@@ -2313,7 +2329,7 @@ async def analyze(file: UploadFile = File(...)):
                     "mode": mode,
                     "coords": ned_coords,
                     "text": full_txt,
-                    "isSmallPrimaryCandidate": is_primary_false_ned(ned_coords),
+                    "isSmallPrimaryCandidate": is_primary_false_ned(ned_coords, visp_version=visp_version),
                 }
                 ned_initializations.append(item)
 
