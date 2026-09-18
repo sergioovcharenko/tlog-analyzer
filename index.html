@@ -1451,6 +1451,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .ai-expert-session.severity-warning{border-left:4px solid var(--warning)}
 .ai-expert-session.severity-info{border-left:4px solid var(--success)}
 .ai-expert-session-badge{font-size:10px;letter-spacing:.35px;text-transform:uppercase;color:var(--text-muted);border:1px solid var(--border-highlight);border-radius:999px;padding:2px 7px}
+.ai-expert-aircraft{font-size:11px;font-weight:900;letter-spacing:.25px;color:#93c5fd;border:1px solid rgba(59,130,246,.55);background:rgba(59,130,246,.10);border-radius:6px;padding:3px 8px}
 .ai-expert-session-meta{color:var(--text-muted);font-size:12px;font-weight:600;margin-left:auto}
 .ai-expert-body{padding:0 14px 15px;border-top:1px solid var(--border-color)}
 .ai-expert-conclusion{margin:12px 0;font-weight:700;line-height:1.5}
@@ -3722,11 +3723,15 @@ function renderAiExpert(expert){
     const badge=document.createElement('span');
     badge.className='ai-expert-session-badge';
     badge.textContent=session.classification==='flight'?'ПОЛІТ':session.classification==='arm_check'?'КОРОТКА ARM-ПЕРЕВІРКА':'НЕВИЗНАЧЕНА';
+    const aircraftTypes=Array.isArray(session.aircraft_types)?session.aircraft_types.filter(Boolean):[];
+    const aircraft=document.createElement('span');
+    aircraft.className='ai-expert-aircraft';
+    aircraft.textContent=aircraftTypes.length?aircraftTypes.join(' / '):'БпЛА: НЕ ВИЗНАЧЕНО';
     const meta=document.createElement('span');
     meta.className='ai-expert-session-meta';
     const endState=session.ended_with_disarm?`DISARM ${formatExpertTime(session.end_s)}`:session.ended_by_log?'DISARM не зафіксовано':'завершення невідоме';
     meta.textContent=`ARM ${formatExpertTime(session.start_s)} • ${endState} • ${formatExpertTime(session.duration_s)} • ${expertSeverityText(session.overall_severity)}`;
-    head.append(title,badge,meta);
+    head.append(title,badge,aircraft,meta);
     details.appendChild(head);
 
     const body=document.createElement('div');body.className='ai-expert-body';

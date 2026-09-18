@@ -267,7 +267,7 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
             special_parts.append(loiter_evidence[0])
         else:
             special_parts.append(
-                "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 50–300 м, а нижче 50 м зниження виконується вертикально."
+                "Неправильне використання польотного режиму LOITER. Для цього профілю вертикальний зліт виконується до 50 м, робочий діапазон становить 10–500 м, а нижче 50 м зниження виконується вертикально."
             )
 
     covered = {"propulsion" if has_propulsion_issue else None, "control" if has_loiter_issue else None}
@@ -290,7 +290,7 @@ def _short_conclusion(session: dict[str, Any], subsystems: dict[str, dict[str, A
     return "Уваги потребують: " + ", ".join(labels) + ". Деталі нижче наведені окремо без автоматичного встановлення причинності."
 
 
-def _analyze_session(session, radio_events, thrust_events, rpm_events) -> dict[str, Any]:
+def _analyze_session(session, radio_events, thrust_events, rpm_events, *, loiter_rule_enabled: bool = False) -> dict[str, Any]:
     scoped_radio = _events_for_session(radio_events, session)
     scoped_thrust = _events_for_session(thrust_events, session)
     scoped_rpm = _events_for_session(rpm_events, session)
@@ -302,10 +302,29 @@ def _analyze_session(session, radio_events, thrust_events, rpm_events) -> dict[s
         "navigation": analyze_navigation(session),
         "power": analyze_power(session),
         "propulsion": propulsion,
-        "control": analyze_control_modes(session),
+        "control": analyze_control_modes(session, loiter_rule_enabled=loiter_rule_enabled),
         "termination": analyze_termination(session),
     }
     severity = _overall_severity(subsystems)
+
+    aircraft_pairs = []
+    for row in session.get("rows") or []:
+        aircraft_name = row.get("aircraftType")
+        board_type = row.get("aircraftBoardType")
+        flight_number = row.get("flightNumber")
+        if aircraft_name:
+            pair = {
+                "flightNumber": flight_number,
+                "aircraftType": aircraft_name,
+                "aircraftBoardType": board_type,
+            }
+            if pair not in aircraft_pairs:
+                aircraft_pairs.append(pair)
+
+    aircraft_types = list(dict.fromkeys(
+        item["aircraftType"] for item in aircraft_pairs if item.get("aircraftType")
+    ))
+
     return {
         "session_id": int(session["session_id"]),
         "classification": str(session.get("classification") or "uncertain"),
@@ -314,6 +333,9 @@ def _analyze_session(session, radio_events, thrust_events, rpm_events) -> dict[s
         "duration_s": float(session.get("duration_s") or 0.0),
         "ended_with_disarm": bool(session.get("ended_with_disarm")),
         "ended_by_log": bool(session.get("ended_by_log")),
+        "aircraft_type": aircraft_types[0] if len(aircraft_types) == 1 else None,
+        "aircraft_types": aircraft_types,
+        "flight_aircraft": aircraft_pairs,
         "overall_severity": severity,
         "short_conclusion": _short_conclusion(session, subsystems),
         "chronology": _build_chronology(subsystems),
@@ -354,10 +376,10 @@ def _build_summary(sessions: list[dict[str, Any]], primary: dict[str, Any] | Non
     return f"Виявлено {count} ARM-сесії. Основні відхилення зосереджені у сесії №{primary['session_id']}."
 
 
-def build_ai_expert_analysis(*, timeline, radio_events, thrust_events, rpm_events) -> dict[str, Any]:
+def build_ai_expert_analysis(*, timeline, radio_events, thrust_events, rpm_events, loiter_rule_enabled: bool = False) -> dict[str, Any]:
     raw_sessions = segment_arm_sessions(list(timeline or []))
     sessions = [
-        _analyze_session(session, radio_events or [], thrust_events or [], rpm_events or [])
+        _analyze_session(session, radio_events or [], thrust_events or [], rpm_events or [], loiter_rule_enabled=loiter_rule_enabled)
         for session in raw_sessions
     ]
 
