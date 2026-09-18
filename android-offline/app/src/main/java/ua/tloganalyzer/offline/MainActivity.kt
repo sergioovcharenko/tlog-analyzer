@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -52,10 +53,31 @@ class MainActivity : AppCompatActivity() {
         webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
         webView.webViewClient = object : WebViewClient() {
+            private fun isAllowed(uri: Uri): Boolean {
+                return uri.host == "127.0.0.1" || uri.host == "localhost" ||
+                        uri.scheme == "blob" || uri.scheme == "data" || uri.scheme == "content"
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val u = request.url
-                return !(u.host == "127.0.0.1" || u.host == "localhost" ||
-                        u.scheme == "blob" || u.scheme == "data" || u.scheme == "content")
+                return !isAllowed(request.url)
+            }
+
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val uri = request?.url ?: return null
+                if ((uri.scheme == "http" || uri.scheme == "https") && !isAllowed(uri)) {
+                    return WebResourceResponse(
+                        "text/plain",
+                        "utf-8",
+                        403,
+                        "Offline",
+                        emptyMap(),
+                        ByteArrayInputStream(ByteArray(0))
+                    )
+                }
+                return null
             }
         }
 
