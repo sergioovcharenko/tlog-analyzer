@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 
 _server_thread = None
 
@@ -9,7 +10,14 @@ def start_server(port=8765):
 
     def run():
         import uvicorn
+        from fastapi.responses import FileResponse
         from backend.main import app
+
+        @app.get("/map3d.js", include_in_schema=False)
+        def android_map3d():
+            path = Path(__file__).resolve().parent / "backend" / "map3d.js"
+            return FileResponse(path, media_type="application/javascript; charset=utf-8")
+
         uvicorn.run(
             app,
             host="127.0.0.1",
